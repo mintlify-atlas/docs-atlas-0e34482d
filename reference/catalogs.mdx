@@ -1,7 +1,7 @@
 ---
-title: "SAT Catalogs and Enums Reference"
+title: "SAT Catalog Enums: RegimenFiscal, UsoCFDI, and More"
 sidebarTitle: "Catalogs"
-description: "Reference for the satcfdi.create.cfd.catalogos module — SAT-defined enums for RegimenFiscal, UsoCFDI, MetodoPago, FormaPago, TipoDeComprobante, Impuesto, TipoFactor, and more."
+description: "Reference for satcfdi.create.cfd.catalogos — SAT-defined StrEnum types for RegimenFiscal, UsoCFDI, MetodoPago, FormaPago, Impuesto, TipoFactor, and more."
 ---
 
 The Mexican SAT publishes a set of official catalogs — fixed tables of codes and descriptions — that must be used when building CFDI comprobantes. The `satcfdi.create.cfd.catalogos` module exposes each catalog as a Python `StrEnum`, so every value is both a typed constant and a plain string. This means you can pass enum members directly to any CFDI builder function without explicit casting, while still benefiting from IDE autocomplete and static analysis.
@@ -203,7 +203,11 @@ The module also exports the following enums used in more specific scenarios:
   | `NOTA_DE_DEBITO_DE_LOS_DOCUMENTOS_RELACIONADOS` | `02` |
   | `DEVOLUCION_DE_MERCANCIA_SOBRE_FACTURAS_O_TRASLADOS_PREVIOS` | `03` |
   | `SUSTITUCION_DE_LOS_CFDI_PREVIOS` | `04` |
+  | `TRASLADOS_DE_MERCANCIAS_FACTURADOS_PREVIAMENTE` | `05` |
+  | `FACTURA_GENERADA_POR_LOS_TRASLADOS_PREVIOS` | `06` |
   | `CFDI_POR_APLICACION_DE_ANTICIPO` | `07` |
+  | `FACTURA_GENERADA_POR_PAGOS_EN_PARCIALIDADES` | `08` |
+  | `FACTURA_GENERADA_POR_PAGOS_DIFERIDOS` | `09` |
 </Accordion>
 
 <Accordion title="ObjetoImp — Tax object classification">
@@ -214,6 +218,11 @@ The module also exports the following enums used in more specific scenarios:
   | `NO_OBJETO_DE_IMPUESTO` | `01` |
   | `SI_OBJETO_DE_IMPUESTO` | `02` |
   | `SI_OBJETO_DEL_IMPUESTO_Y_NO_OBLIGADO_AL_DESGLOSE` | `03` |
+  | `SI_OBJETO_DEL_IMPUESTO_Y_NO_CAUSA_IMPUESTO` | `04` |
+  | `SI_OBJETO_DEL_IMPUESTO_IVA_CREDITO_PODEBI` | `05` |
+  | `SI_OBJETO_DEL_IVA_NO_TRASLADO_IVA` | `06` |
+  | `NO_TRASLADO_DEL_IVA_SI_DESGLOSE_IEPS` | `07` |
+  | `NO_TRASLADO_DEL_IVA_NO_DESGLOSE_IEPS` | `08` |
 </Accordion>
 
 <Accordion title="Exportacion — Export classification">
@@ -224,6 +233,7 @@ The module also exports the following enums used in more specific scenarios:
   | `NO_APLICA` | `01` |
   | `DEFINITIVA_CON_CLAVE_A1` | `02` |
   | `TEMPORAL` | `03` |
+  | `DEFINITIVA_CON_CLAVE_DISTINTA_A_A1_O_CUANDO_NO_EXISTE_ENAJENACION_EN_TERMINOS_DEL_CFF` | `04` |
 </Accordion>
 
 <Accordion title="Periodicidad — Global invoice periodicity">

@@ -1,10 +1,10 @@
 ---
-title: "SAT Direct: Status Checks and Listado 69B"
+title: "SAT Direct: Comprobante Status Checks and Listado 69B"
 sidebarTitle: "SAT Direct"
 description: "Use the SAT class to check comprobante status directly against the SAT web service, query Listado 69B taxpayer status, and verify LCO without a PAC."
 ---
 
-Not every SAT operation requires a PAC. The `SAT` class in `satcfdi.pacs.sat` communicates directly with SAT's own web services to let you verify comprobante validity, look up taxpayer blacklist status under Article 69-B, retrieve pending cancellation requests, and process accept/reject responses — all without routing through a third-party provider. For bulk CFDI download (Descarga Masiva) see the [Bulk Download](/pacs/bulk-download) page.
+Not every SAT operation requires a PAC. The `SAT` class in `satcfdi.pacs.sat` communicates directly with SAT's own web services to let you verify comprobante validity and look up taxpayer blacklist status under Article 69-B — without routing through a third-party provider. Bilateral cancellation operations (`pending()`, `accept_reject()`) are available on PAC providers such as `Finkok` and `SWSapien` that implement those SAT workflows. For bulk CFDI download (Descarga Masiva) see the [Bulk Download](/pacs/bulk-download) page.
 
 ## The `SAT` Class
 
@@ -131,43 +131,47 @@ The taxpayer provided documentation and information to the SAT within the 15-day
 
 ## Pending Cancellations
 
-When a CFDI requires the recipient's acceptance before it can be cancelled (i.e. the SAT requires a bilateral cancellation process), the issuer's cancel request lands in the recipient's *pending* queue. Use `pending()` to list all UUIDs awaiting your action.
+When a CFDI requires the recipient's acceptance before it can be cancelled (i.e. the SAT requires a bilateral cancellation process), the issuer's cancel request lands in the recipient's *pending* queue. The `pending()` method is implemented by PAC providers that support bilateral cancellation — notably `Finkok` and `SWSapien`.
 
 ```python
-sat = SAT(signer=signer)
+from satcfdi.pacs.finkok import Finkok
+from satcfdi.pacs import Environment
 
-pending_uuids = sat.pending(rfc="XAXX010101000")
+pac = Finkok(username="user@email.com", password="pass", environment=Environment.PRODUCTION)
+
+pending_uuids = pac.pending(rfc="XAXX010101000")
 
 for uuid in pending_uuids:
     print(f"Pending cancellation request for UUID: {uuid}")
 ```
 
-**Signature:**
+**Signature (on `Finkok`, `SWSapien`):**
 ```python
-sat.pending(rfc: str) -> list[str]
+pac.pending(rfc: str) -> list[str]
 ```
 
 ---
 
 ## Accept or Reject a Cancellation Request
 
-Once you have identified pending requests, respond to them using `accept_reject()`. Build a `SolicitudAceptacionRechazo` object and pass it to the method.
+Once you have identified pending requests, respond to them using `accept_reject()`. This method is implemented by PAC providers that support bilateral cancellation workflows — `Finkok` and `SWSapien`. Build a `SolicitudAceptacionRechazo` object signed with your FIEL and pass it to the method.
 
 ```python
-from satcfdi.pacs.sat import SAT
+from satcfdi.pacs.finkok import Finkok
+from satcfdi.pacs import Environment
 from satcfdi.create.cancela.aceptacionrechazo import SolicitudAceptacionRechazo
 
-sat = SAT(signer=signer)
+pac = Finkok(username="user@email.com", password="pass", environment=Environment.PRODUCTION)
 
 request = SolicitudAceptacionRechazo(signer=signer, folios=[...])
-ack = sat.accept_reject(request)
+ack = pac.accept_reject(request)
 
 print(ack.folios)   # dict of UUID -> response status
 ```
 
-**Signature:**
+**Signature (on `Finkok`, `SWSapien`):**
 ```python
-sat.accept_reject(request: SolicitudAceptacionRechazo) -> AcceptRejectAcknowledgment
+pac.accept_reject(request: SolicitudAceptacionRechazo) -> AcceptRejectAcknowledgment
 ```
 
 The returned `AcceptRejectAcknowledgment` dataclass has:

@@ -1,7 +1,7 @@
 ---
-title: "Load and Export CFDI Documents"
+title: "Load and Export CFDI Documents with python-satcfdi"
 sidebarTitle: "Load & Export"
-description: "Load existing CFDI XML from file or bytes with CFDI.from_file() and CFDI.from_string(), then export to XML, JSON, HTML, and PDF."
+description: "Load stamped CFDI XML from file or string using CFDI.from_file() and CFDI.from_string(), then export to XML, JSON, HTML, or PDF formats."
 ---
 
 The `CFDI` class is the central Python object for working with stamped Mexican electronic invoices. It wraps an XML document as a dict-like structure, giving you typed access to every node and attribute while also providing serialization helpers for every common output format. Whether you receive a CFDI from a PAC, a supplier, or your own signing flow, you always start by loading it into a `CFDI` instance.

@@ -1,7 +1,7 @@
 ---
-title: "Install python-satcfdi via pip or from Source"
+title: "Install python-satcfdi: PyPI, Source Build, and Extras"
 sidebarTitle: "Installation"
-description: "Install the satcfdi Python package from PyPI with pip, or clone and build from source. Requires Python 3.10 or newer."
+description: "Install satcfdi from PyPI with pip, or build from source. Covers Python 3.10+ requirement, optional extras, and WeasyPrint system libs for PDF output."
 ---
 
 python-satcfdi is published to PyPI under the package name `satcfdi` and can be installed with a single `pip` command. Because the library depends on [WeasyPrint](https://weasyprint.org/) for PDF rendering, a small number of system-level libraries (Pango, cairo, GLib) must also be present on your machine — the steps below call this out explicitly. For CI and server environments, installing from source gives you full control over the build.
@@ -34,7 +34,7 @@ python-satcfdi is published to PyPI under the package name `satcfdi` and can be 
     Confirm that the package was installed correctly by importing it and printing the version:
 
     ```bash
-    python -c "from satcfdi import __version__; print(__version__.__version__)"
+    python -c "from satcfdi.__version__ import __version__; print(__version__)"
     ```
 
     You should see a version string such as `1.x.y` printed to stdout. You can also verify the CLI entry point:

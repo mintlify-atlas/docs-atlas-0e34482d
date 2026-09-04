@@ -1,7 +1,7 @@
 ---
-title: "Render CFDI to PDF, HTML, and JSON"
+title: "satcfdi.render: PDF, HTML, and JSON Output Functions"
 sidebarTitle: "Render"
-description: "Reference for the satcfdi.render module — convert CFDI and Retenciones documents to PDF, HTML body or full page, and JSON using WeasyPrint and Jinja2 templates."
+description: "Reference for satcfdi.render — render CFDI documents to PDF via WeasyPrint, HTML via Jinja2 templates, and JSON using the standard library."
 ---
 
 The `satcfdi.render` module converts any parsed `XElement` CFDI document — or a list of them — into a human-readable representation. Three output formats are supported: **PDF** (via WeasyPrint), **HTML** (via Jinja2 templates), and **JSON** (via the standard library `json` module). Every function accepts either a file path string or a writable file-like object as its `target`, making it straightforward to save to disk or stream directly to an HTTP response.
@@ -200,7 +200,8 @@ def html_str(
 
 ```python
 from satcfdi.cfdi import CFDI
-from satcfdi import render, BODY_TEMPLATE
+from satcfdi import render
+from satcfdi.render import BODY_TEMPLATE
 
 cfdi    = CFDI.from_file("factura.xml")
 snippet = render.html_str(cfdi, template=BODY_TEMPLATE)

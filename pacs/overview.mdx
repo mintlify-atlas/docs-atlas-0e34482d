@@ -1,7 +1,7 @@
 ---
 title: "PAC Integration: Stamp CFDI with Authorized Providers"
 sidebarTitle: "Overview"
-description: "Learn how to stamp, issue, recover, and cancel CFDI using the PAC base class and the six built-in integrations: Diverza, Finkok, SW Sapien, Facturama, Prodigia, and Comercio Digital."
+description: "Use python-satcfdi to stamp, issue, and cancel CFDI through six PAC providers: Diverza, Finkok, SW Sapien, Facturama, Prodigia, and Comercio Digital."
 ---
 
 A **PAC** (Proveedor Autorizado de Certificación) is a third-party company authorized by Mexico's SAT to receive, validate, and seal CFDI comprobantes with the official *TimbreFiscalDigital* complement. Every CFDI must pass through a PAC before it has legal fiscal validity. `python-satcfdi` ships with a unified `PAC` base class and six ready-to-use integrations so you can switch providers without rewriting your stamping logic.
@@ -90,8 +90,16 @@ Each PAC class lives in its own module under `satcfdi.pacs` and accepts provider
     ```python
     from satcfdi.pacs.swsapien import SWSapien
 
+    # Option 1: static bearer token
     pac = SWSapien(
         token="your-bearer-token",
+        environment=Environment.TEST,
+    )
+
+    # Option 2: user/password (token auto-refreshes)
+    pac = SWSapien(
+        user="user@email.com",
+        password="your-password",
         environment=Environment.TEST,
     )
     ```
@@ -222,10 +230,20 @@ print(status)
 ```python
 from satcfdi.pacs import CancelReason
 
+# Cancel without a substitution document (reason 02 or 03)
 ack = pac.cancel(
     cfdi=invoice,
     reason=CancelReason.COMPROBANTE_EMITIDO_CON_ERRORES_SIN_RELACION,
     signer=signer,  # required by some PACs (e.g. Finkok)
+)
+print(ack.code)
+
+# Cancel with a substitution UUID (reason 01 — errors with relation)
+ack = pac.cancel(
+    cfdi=invoice,
+    reason=CancelReason.COMPROBANTE_EMITIDO_CON_ERRORES_CON_RELACION,
+    substitution_id="new-invoice-uuid-here",
+    signer=signer,
 )
 print(ack.code)
 ```

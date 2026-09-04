@@ -1,5 +1,5 @@
 ---
-title: "Bulk Download CFDI from SAT (Descarga Masiva)"
+title: "Bulk Download: Retrieve CFDI via SAT Descarga Masiva"
 sidebarTitle: "Bulk Download"
 description: "Download issued and received CFDI and Retenciones at scale using SAT's Descarga Masiva web service with the full request-verify-download flow."
 ---
@@ -130,6 +130,7 @@ The `tipo_solicitud` parameter controls what the ZIP package contains:
 | `TipoDescargaMasivaTerceros.CFDI` | Full XML files for each matching comprobante |
 | `TipoDescargaMasivaTerceros.METADATA` | Lightweight metadata rows (no XML content) |
 | `TipoDescargaMasivaTerceros.PDF` | PDF representations (where available) |
+| `TipoDescargaMasivaTerceros.PDFCOCEMA` | PDF in COCEMA format (where available) |
 | `TipoDescargaMasivaTerceros.TXTUUIDMASIVA` | Plain-text list of UUIDs only |
 
 ```python

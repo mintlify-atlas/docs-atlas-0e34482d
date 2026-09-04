@@ -1,0 +1,280 @@
+---
+title: "Create Retenciones e Información de Pagos"
+sidebarTitle: "Retenciones"
+description: "Generate Retenciones 1.0 and 2.0 comprobantes using the retenciones modules, including dividendos, intereses, plataformas tecnológicas, and pagos a extranjeros."
+---
+
+A **Comprobante de Retenciones e Información de Pagos** is a separate electronic document — distinct from a CFDI comprobante — that entities are required to issue when they withhold taxes from third parties. Common use cases include financial institutions retaining taxes on interest income, technology platforms withholding ISR and IVA from service providers, companies paying dividends, and employers making payments to foreign residents. The `python-satcfdi` library provides versioned modules for both schema generations under `satcfdi.create.retencion`.
+
+## Retenciones 2.0 Base Structure
+
+`retenciones20.Retenciones` is the root document class for the current schema version (namespace `http://www.sat.gob.mx/esquemas/retencionpago/2`). After instantiation, sign and process it the same way as a CFDI comprobante:
+
+```python
+from decimal import Decimal
+from satcfdi.models import Signer
+from satcfdi.create.retencion import retenciones20
+
+signer = Signer.load(
+    certificate=open("csd/xiqb891116qe4_csd.cer", "rb").read(),
+    key=open("csd/xiqb891116qe4_csd.key", "rb").read(),
+    password=open("csd/xiqb891116qe4_csd.txt", "r").read(),
+)
+
+retencion = retenciones20.Retenciones(
+    lugar_exp_retenc="56820",
+    cve_retenc="14",               # SAT catalogue key for the retention type
+    folio_int="RET-001",
+    emisor=retenciones20.Emisor(
+        rfc_e=signer.rfc,
+        nom_den_raz_soc_e=signer.legal_name,
+        regimen_fiscal_e="601",
+    ),
+    receptor=retenciones20.Receptor(
+        nacionalidad_r="Nacional",
+        nacional=retenciones20.Nacional(
+            rfc_r="KIJ0906199R1",
+            nom_den_raz_soc_r="KIJ, S.A DE C.V.",
+            domicilio_fiscal_r="59820",
+        ),
+    ),
+    periodo=retenciones20.Periodo(
+        mes_ini="01",
+        mes_fin="01",
+        ejercicio="2024",
+    ),
+    totales=retenciones20.Totales(
+        monto_tot_operacion=Decimal("10000.00"),
+        monto_tot_grav=Decimal("10000.00"),
+        monto_tot_exent=Decimal("0"),
+        monto_tot_ret=Decimal("1000.00"),
+        imp_retenidos=retenciones20.ImpRetenidos(
+            monto_ret=Decimal("1000.00"),
+            tipo_pago_ret="R",     # "R" = Retención
+            base_ret=Decimal("10000.00"),
+            impuesto_ret="001",    # ISR
+        ),
+    ),
+)
+
+retencion.sign(signer)
+retencion = retencion.process()
+```
+
+<Note>
+Retenciones 2.0 uses `RfcE` / `NomDenRazSocE` / `RegimenFiscalE` for the emisor (not the CFDI 4.0 field names). Always refer to the `retenciones20` module classes rather than `cfdi40` classes.
+</Note>
+
+## Common Retención Types
+
+### Intereses (intereses10)
+
+Used by financial institutions to document tax withheld on interest income:
+
+```python
+from decimal import Decimal
+from satcfdi.create.retencion import retenciones20, intereses10
+
+complemento_intereses = intereses10.Intereses(
+    sist_financiero="Sí",
+    retiro_aoresret_int="Sí",
+    oper_financ_derivad="No",
+    mont_int_nominal=Decimal("5000.00"),
+    mont_int_real=Decimal("3800.00"),
+    perdida=Decimal("0"),
+)
+
+retencion = retenciones20.Retenciones(
+    lugar_exp_retenc="56820",
+    cve_retenc="14",
+    emisor=retenciones20.Emisor(
+        rfc_e=signer.rfc,
+        nom_den_raz_soc_e=signer.legal_name,
+        regimen_fiscal_e="601",
+    ),
+    receptor=retenciones20.Receptor(
+        nacionalidad_r="Nacional",
+        nacional=retenciones20.Nacional(
+            rfc_r="XIQB891116QE4",
+            nom_den_raz_soc_r="Juan Pérez",
+            domicilio_fiscal_r="06600",
+        ),
+    ),
+    periodo=retenciones20.Periodo(mes_ini="01", mes_fin="01", ejercicio="2024"),
+    totales=retenciones20.Totales(
+        monto_tot_operacion=Decimal("5000.00"),
+        monto_tot_grav=Decimal("5000.00"),
+        monto_tot_exent=Decimal("0"),
+        monto_tot_ret=Decimal("750.00"),
+        imp_retenidos=retenciones20.ImpRetenidos(
+            monto_ret=Decimal("750.00"),
+            tipo_pago_ret="R",
+            base_ret=Decimal("5000.00"),
+            impuesto_ret="001",
+        ),
+    ),
+    complemento=complemento_intereses,
+)
+
+retencion.sign(signer)
+retencion = retencion.process()
+```
+
+### Plataformas Tecnológicas (plataformasTecnologicas10)
+
+Required when digital platforms (e.g. ridesharing, delivery, marketplace services) pay individual service providers and withhold ISR and IVA:
+
+```python
+from decimal import Decimal
+from datetime import date
+from satcfdi.create.retencion import retenciones20, plataformasTecnologicas10
+
+complemento_pt = plataformasTecnologicas10.ServiciosPlataformasTecnologicas(
+    periodicidad="01",            # Monthly
+    num_serv=5,
+    mon_tot_serv_siva=Decimal("8000.00"),
+    total_iva_trasladado=Decimal("1280.00"),
+    total_iva_retenido=Decimal("853.33"),
+    total_isr_retenido=Decimal("800.00"),
+    dif_iva_entregado_prest_serv=Decimal("426.67"),
+    mon_totalpor_uso_plataforma=Decimal("400.00"),
+    servicios=plataformasTecnologicas10.DetallesDelServicio(
+        forma_pago_serv="03",
+        tipo_de_serv="01",        # Transporte de pasajeros
+        fecha_serv=date(2024, 1, 15),
+        precio_serv_sin_iva=Decimal("1600.00"),
+        impuestos_trasladadosdel_servicio=plataformasTecnologicas10.ImpuestosTrasladadosdelServicio(
+            base=Decimal("1600.00"),
+            impuesto="002",       # IVA
+            tasa_cuota=Decimal("0.160000"),
+            importe=Decimal("256.00"),
+        ),
+        comision_del_servicio=plataformasTecnologicas10.ComisionDelServicio(
+            importe=Decimal("80.00"),
+            porcentaje=Decimal("5.00"),
+        ),
+    ),
+)
+
+retencion = retenciones20.Retenciones(
+    lugar_exp_retenc="56820",
+    cve_retenc="25",              # Plataformas tecnológicas
+    emisor=retenciones20.Emisor(
+        rfc_e=signer.rfc,
+        nom_den_raz_soc_e=signer.legal_name,
+        regimen_fiscal_e="625",
+    ),
+    receptor=retenciones20.Receptor(
+        nacionalidad_r="Nacional",
+        nacional=retenciones20.Nacional(
+            rfc_r="PERG850101AB1",
+            nom_den_raz_soc_r="Pedro García",
+            domicilio_fiscal_r="06600",
+        ),
+    ),
+    periodo=retenciones20.Periodo(mes_ini="01", mes_fin="01", ejercicio="2024"),
+    totales=retenciones20.Totales(
+        monto_tot_operacion=Decimal("8000.00"),
+        monto_tot_grav=Decimal("8000.00"),
+        monto_tot_exent=Decimal("0"),
+        monto_tot_ret=Decimal("1653.33"),
+        imp_retenidos=[
+            retenciones20.ImpRetenidos(monto_ret=Decimal("800.00"),  tipo_pago_ret="R", impuesto_ret="001"),
+            retenciones20.ImpRetenidos(monto_ret=Decimal("853.33"),  tipo_pago_ret="R", impuesto_ret="002"),
+        ],
+    ),
+    complemento=complemento_pt,
+)
+
+retencion.sign(signer)
+retencion = retencion.process()
+```
+
+## Available Retención Modules
+
+<CardGroup cols={2}>
+  <Card title="retenciones20" icon="file-invoice-dollar">
+    **Retenciones 2.0** — Base document (current version). Root class: `Retenciones`
+  </Card>
+  <Card title="retenciones10" icon="file-invoice">
+    **Retenciones 1.0** — Legacy base document. Root class: `Retenciones`
+  </Card>
+  <Card title="intereses10" icon="percent">
+    **Intereses 1.0** — Interest income retention. Root class: `Intereses`
+  </Card>
+  <Card title="dividendos10" icon="chart-line">
+    **Dividendos 1.0** — Dividend and profit distributions. Root class: `Dividendos`
+  </Card>
+  <Card title="plataformasTecnologicas10" icon="mobile">
+    **PlataformasTecnologicas 1.0** — Gig-economy platform withholdings. Root class: `ServiciosPlataformasTecnologicas`
+  </Card>
+  <Card title="pagosaextranjeros10" icon="earth-americas">
+    **PagosAExtranjeros 1.0** — Payments to foreign residents. Root class: `Pagosaextranjeros`
+  </Card>
+  <Card title="arrendamientoenfideicomiso10" icon="building">
+    **ArrendamientoEnFideicomiso 1.0** — Trust leasing income. Root class: `Arrendamientoenfideicomiso`
+  </Card>
+  <Card title="enajenaciondeacciones10" icon="handshake">
+    **EnajenacionDeAcciones 1.0** — Share sale withholdings. Root class: `EnajenaciondeAcciones`
+  </Card>
+  <Card title="fideicomisonoempresarial10" icon="landmark">
+    **FideicomisoNoEmpresarial 1.0** — Non-business trust. Root class: `Fideicomisonoempresarial`
+  </Card>
+  <Card title="intereseshipotecarios10" icon="house">
+    **InteresesHipotecarios 1.0** — Mortgage interest. Root class: `Intereseshipotecarios`
+  </Card>
+  <Card title="operacionesconderivados10" icon="arrows-spin">
+    **OperacionesConDerivados 1.0** — Derivative financial instruments. Root class: `Operacionesconderivados`
+  </Card>
+  <Card title="planesderetiro10" icon="piggy-bank">
+    **PlanesDeRetiro 1.0 / 1.1** — Retirement plan distributions. Root classes: `Planesderetiro`
+  </Card>
+  <Card title="premios10" icon="trophy">
+    **Premios 1.0** — Prize and lottery winnings. Root class: `Premios`
+  </Card>
+  <Card title="sectorfinanciero10" icon="bank">
+    **SectorFinanciero 1.0** — Financial sector supplement. Root class: `SectorFinanciero`
+  </Card>
+</CardGroup>
+
+## Signing and Exporting Retenciones
+
+The signing and export workflow for retenciones is identical to that for CFDI comprobantes:
+
+<Steps>
+  <Step title="Sign with the CSD">
+    Call `retencion.sign(signer)` to compute and embed the digital signature:
+
+    ```python
+    retencion.sign(signer)
+    ```
+  </Step>
+  <Step title="Process to a CFDI object">
+    Call `retencion.process()` to serialise and re-parse the document:
+
+    ```python
+    retencion = retencion.process()
+    ```
+  </Step>
+  <Step title="Submit to PAC">
+    Use the PAC's `stamp()` or `issue()` method. After stamping, a `TimbreFiscalDigital` complement is added:
+
+    ```python
+    from satcfdi.pacs import Accept
+
+    doc = pac.stamp(retencion, accept=Accept.XML)
+    stamped = doc.cfdi
+    ```
+  </Step>
+  <Step title="Export">
+    Export to any format using the same render helpers:
+
+    ```python
+    from satcfdi import render
+
+    stamped.xml_write("retencion.xml")
+    render.html_write(stamped, "retencion.html")
+    render.pdf_write(stamped, "retencion.pdf")
+    ```
+  </Step>
+</Steps>

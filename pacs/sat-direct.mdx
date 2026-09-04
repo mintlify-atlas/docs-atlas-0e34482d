@@ -1,0 +1,178 @@
+---
+title: "SAT Direct: Status Checks and Listado 69B"
+sidebarTitle: "SAT Direct"
+description: "Use the SAT class to check comprobante status directly against the SAT web service, query Listado 69B taxpayer status, and verify LCO without a PAC."
+---
+
+Not every SAT operation requires a PAC. The `SAT` class in `satcfdi.pacs.sat` communicates directly with SAT's own web services to let you verify comprobante validity, look up taxpayer blacklist status under Article 69-B, retrieve pending cancellation requests, and process accept/reject responses — all without routing through a third-party provider. For bulk CFDI download (Descarga Masiva) see the [Bulk Download](/pacs/bulk-download) page.
+
+## The `SAT` Class
+
+```python
+from satcfdi.pacs.sat import SAT
+from satcfdi.pacs import Environment
+```
+
+### Constructor
+
+```python
+SAT(signer=None, environment=Environment.PRODUCTION)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `signer` | `Signer \| None` | `None` | FIEL or CSD `Signer` instance. **Optional** for read-only status checks; **required** for Descarga Masiva and cancellation operations. |
+| `environment` | `Environment` | `Environment.PRODUCTION` | `PRODUCTION` or `TEST`. The test environment uses SAT's pre-production QR verification endpoint. |
+
+```python
+from satcfdi.pacs.sat import SAT
+
+# Read-only — no signer required
+sat = SAT()
+
+# With a FIEL for bulk-download or cancellation operations
+from satcfdi.models import Signer
+
+signer = Signer.load(
+    certificate=open("fiel/certificate.cer", "rb").read(),
+    key=open("fiel/private.key", "rb").read(),
+    password=open("fiel/password.txt", "r").read(),
+)
+
+sat = SAT(signer=signer)
+```
+
+---
+
+## Comprobante Status Check
+
+Verify whether a CFDI is currently *Vigente* (active) or *Cancelado* (cancelled) directly against the SAT QR verification service. This is equivalent to scanning the QR code printed on a paper invoice.
+
+```python
+from satcfdi.cfdi import CFDI
+from satcfdi.pacs.sat import SAT
+
+sat = SAT()
+
+cfdi = CFDI.from_file("comprobante.xml")
+result = sat.status(cfdi)
+
+print(result)
+```
+
+The returned `dict` contains the raw fields from SAT's `ConsultaCFDIService`:
+
+```python
+{
+    "CodigoEstatus": "S - Comprobante obtenido satisfactoriamente.",
+    "EsCancelable": "Cancelable sin aceptación",
+    "EstadoComprobante": "Vigente",
+    "ValidacionEFOS": "200",
+}
+```
+
+<Note>
+  `sat.status()` requires the CFDI to already contain a `TimbreFiscalDigital` complement — it reads the `UUID`, `RfcEmisor`, `RfcReceptor`, and `Total` values from the stamped document to build the SAT query. No `Signer` is needed.
+</Note>
+
+---
+
+## Listado 69-B Taxpayer Status
+
+Article 69-B of Mexico's Código Fiscal de la Federación allows the SAT to publish a list of taxpayers presumed to issue invoices for non-existent operations. Use `list_69b()` to check whether an RFC appears on that list and in which category.
+
+```python
+from satcfdi.pacs import TaxpayerStatus
+from satcfdi.pacs.sat import SAT
+
+sat = SAT()
+
+status = sat.list_69b("AAL081211JP0")
+
+if status is None:
+    print("RFC not found in Listado 69-B — no irregularities detected")
+elif status == TaxpayerStatus.DEFINITIVO:
+    print("WARNING: This RFC is definitively listed as an EFOS!")
+else:
+    print(f"RFC status: {status.value}")
+```
+
+### `TaxpayerStatus` Enum Values
+
+<Accordion title="PRESUNTO">
+**Value:** `'Presunto'`
+
+The SAT has detected that this taxpayer has been issuing receipts irregularly and *presumes* the non-existence of the covered operations. The SAT notifies the taxpayer via their fiscal mailbox (*buzón tributario*), the SAT website, and the *Diario Oficial de la Federación*. This is the initial classification — the taxpayer has 30 days to present evidence and rebut the presumption.
+</Accordion>
+
+<Accordion title="SENTENCIA_FAVORABLE">
+**Value:** `'Sentencia Favorable'`
+
+The taxpayer presented evidence within the allotted 30-day window and successfully demonstrated that their operations are real. The SAT publishes this status to indicate that the presumption has been lifted.
+</Accordion>
+
+<Accordion title="DEFINITIVO">
+**Value:** `'Definitivo'`
+
+The taxpayer either did not respond to the SAT's notification within 15 days of the last notification, or was unable to substantiate the existence of their operations. This is the final adverse classification. Any entity that deducted or credited taxes based on invoices from an RFC in `DEFINITIVO` status must correct their tax situation.
+</Accordion>
+
+<Accordion title="DESVIRTUADO">
+**Value:** `'Desvirtuado'`
+
+The taxpayer provided documentation and information to the SAT within the 15-day window that successfully countered (*desvirtuó*) the facts that led to their initial notification. This classification indicates the process was resolved in the taxpayer's favour.
+</Accordion>
+
+<Note>
+  `list_69b()` downloads the complete Listado 69-B CSV from `omawww.sat.gob.mx`, converts it to a local JSON cache file (`Listado_Completo_69-B.json`), and returns the result from that cache. The cache is refreshed automatically if it is more than **15 days** old. This avoids hammering the SAT server on every call while keeping the data reasonably current.
+</Note>
+
+---
+
+## Pending Cancellations
+
+When a CFDI requires the recipient's acceptance before it can be cancelled (i.e. the SAT requires a bilateral cancellation process), the issuer's cancel request lands in the recipient's *pending* queue. Use `pending()` to list all UUIDs awaiting your action.
+
+```python
+sat = SAT(signer=signer)
+
+pending_uuids = sat.pending(rfc="XAXX010101000")
+
+for uuid in pending_uuids:
+    print(f"Pending cancellation request for UUID: {uuid}")
+```
+
+**Signature:**
+```python
+sat.pending(rfc: str) -> list[str]
+```
+
+---
+
+## Accept or Reject a Cancellation Request
+
+Once you have identified pending requests, respond to them using `accept_reject()`. Build a `SolicitudAceptacionRechazo` object and pass it to the method.
+
+```python
+from satcfdi.pacs.sat import SAT
+from satcfdi.create.cancela.aceptacionrechazo import SolicitudAceptacionRechazo
+
+sat = SAT(signer=signer)
+
+request = SolicitudAceptacionRechazo(signer=signer, folios=[...])
+ack = sat.accept_reject(request)
+
+print(ack.folios)   # dict of UUID -> response status
+```
+
+**Signature:**
+```python
+sat.accept_reject(request: SolicitudAceptacionRechazo) -> AcceptRejectAcknowledgment
+```
+
+The returned `AcceptRejectAcknowledgment` dataclass has:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `folios` | `dict` | Mapping of UUID to response status for each processed folio |
+| `acuse` | `bytes \| None` | XML acknowledgment receipt from SAT, if available |

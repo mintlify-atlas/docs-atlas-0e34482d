@@ -1,0 +1,147 @@
+---
+title: "SAT Portal: RFC Validation and LCO Queries"
+sidebarTitle: "Portal SAT"
+description: "Authenticate with the SAT Factura Electrónica portal using FIEL to validate RFC formats, verify legal names against SAT records, and query LCO (Lista de Contribuyentes Obligados)."
+---
+
+The `SATFacturaElectronica` class provides programmatic access to SAT's Factura Electrónica portal. After authenticating with your FIEL, you can validate RFC registrations, cross-check legal (business) names against SAT's official records, and query LCO (Lista de Contribuyentes Obligados) details — all without navigating the portal manually.
+
+## Authentication
+
+All portal operations require a valid session. Call `login()` after constructing the `SATFacturaElectronica` instance. The method handles the full FIEL + SAML/WS-Federation handshake automatically.
+
+```python
+from satcfdi.models import Signer
+from satcfdi.portal import SATFacturaElectronica
+
+# Load FIEL (NOT a CSD)
+signer = Signer.load(
+    certificate=open('fiel/xiqb891116qe4.cer', 'rb').read(),
+    key=open('fiel/xiqb891116qe4.key', 'rb').read(),
+    password=open('fiel/xiqb891116qe4.txt', 'r').read()
+)
+
+sat_session = SATFacturaElectronica(signer)
+sat_session.login()
+```
+
+<Warning>
+  This portal requires a **FIEL** (e-firma), not a CSD (Certificado de Sello Digital). Attempting to authenticate with a CSD will fail.
+</Warning>
+
+### Saving and Restoring Sessions
+
+To avoid logging in on every run you can persist the session cookies to disk and reload them later.
+
+```python
+import io
+
+# Save session after login
+with open('session.pkl', 'wb') as f:
+    sat_session.save_session(f)
+
+# Restore session in a later run
+with open('session.pkl', 'rb') as f:
+    sat_session.load_session(f)
+```
+
+<Note>
+  SAT sessions expire after a period of inactivity. If a saved session is stale, call `login()` again to obtain a fresh one.
+</Note>
+
+## RFC Validation
+
+`rfc_valid(rfc)` checks whether an RFC exists in SAT's LRFC (Lista del Registro Federal de Contribuyentes). Returns `True` if the RFC is registered, `False` otherwise.
+
+```python
+# Validate a single RFC
+res = sat_session.rfc_valid(rfc='XIQB891116QE4')
+print(res)  # True or False
+```
+
+The RFC string is automatically converted to uppercase before the request is sent.
+
+## Legal Name Validation
+
+`legal_name_valid(rfc, legal_name)` verifies that a given legal name (razón social) matches the name on file for the RFC. This is useful when issuing CFDIs to third parties — SAT requires the receptor's name to match their registered data exactly.
+
+```python
+# Validate RFC + legal name combination
+res = sat_session.legal_name_valid(
+    rfc='XIQB891116QE4',
+    legal_name='KIJ, S.A DE C.V.'
+)
+print(res)  # True if the name matches SAT records
+```
+
+Both the RFC and the legal name are converted to uppercase before the query is sent. If the underlying API call is unsuccessful (i.e., `exitoso` is `False` in the response), a `ResponseError` is raised.
+
+## LCO Queries
+
+`lco_details(rfc)` retrieves the LCO (Lista de Contribuyentes Obligados) information for a given RFC. This includes details about whether the taxpayer is subject to the border-region tax incentive and their invoice-related obligations.
+
+```python
+# Fetch LCO details
+res = sat_session.lco_details(rfc='XIQB891116QE4')
+print(res)
+```
+
+An optional `apply_border_region` parameter (default `True`) controls whether the border-region flag is included in the query:
+
+```python
+# Query without applying border region logic
+res = sat_session.lco_details(rfc='XIQB891116QE4', apply_border_region=False)
+print(res)
+```
+
+The result is parsed JSON returned directly from SAT's portal.
+
+## Full Example
+
+The following example shows all three operations in sequence after a single login:
+
+```python
+from satcfdi.models import Signer
+from satcfdi.portal import SATFacturaElectronica
+
+signer = Signer.load(
+    certificate=open('fiel/xiqb891116qe4.cer', 'rb').read(),
+    key=open('fiel/xiqb891116qe4.key', 'rb').read(),
+    password=open('fiel/xiqb891116qe4.txt', 'r').read()
+)
+
+sat_session = SATFacturaElectronica(signer)
+sat_session.login()
+
+# RFC Validation
+rfc_exists = sat_session.rfc_valid(rfc='XIQB891116QE4')
+print('RFC exists:', rfc_exists)
+
+# Legal name validation
+name_ok = sat_session.legal_name_valid(
+    rfc='XIQB891116QE4',
+    legal_name='KIJ, S.A DE C.V.'
+)
+print('Legal name matches:', name_ok)
+
+# LCO details
+lco = sat_session.lco_details(rfc='XIQB891116QE4')
+print('LCO details:', lco)
+```
+
+## API Reference
+
+<CardGroup cols={2}>
+  <Card title="login()" icon="key">
+    Authenticates with FIEL via the SAT Factura Electrónica portal. Must be called before any other method.
+  </Card>
+  <Card title="rfc_valid(rfc)" icon="magnifying-glass">
+    Returns `True` if the RFC is present in SAT's LRFC; `False` otherwise.
+  </Card>
+  <Card title="legal_name_valid(rfc, legal_name)" icon="building">
+    Validates that a legal name matches the SAT-registered name for the given RFC.
+  </Card>
+  <Card title="lco_details(rfc)" icon="list">
+    Returns LCO details for the RFC, including border-region tax incentive information.
+  </Card>
+</CardGroup>

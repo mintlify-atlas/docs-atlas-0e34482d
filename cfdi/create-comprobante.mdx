@@ -1,0 +1,316 @@
+---
+title: "Create CFDI 4.0 Comprobante Documents"
+sidebarTitle: "Create Comprobante"
+description: "Build CFDI 4.0 Ingreso, Nómina, and Traslado comprobantes using cfdi40 module classes, SAT catalog enums, and digital signing with Signer."
+---
+
+The `cfdi40` module mirrors the official SAT CFDI 4.0 schema as a set of Python dataclasses. You instantiate the root `Comprobante` object — or one of its factory class-methods for special document types — populate it with typed sub-nodes, sign it with a `Signer`, and call `process()` to obtain a fully validated `CFDI` object ready for stamping by a PAC. Tax subtotals, totals, and `ObjetoImp` flags are computed automatically when the `Comprobante` is constructed.
+
+## Loading a Signer
+
+Every CFDI must be signed with the issuer's **Certificado de Sello Digital (CSD)**. Load it once and reuse it for all documents:
+
+```python
+from satcfdi.models import Signer
+
+signer = Signer.load(
+    certificate=open("csd/xiqb891116qe4_csd.cer", "rb").read(),
+    key=open("csd/xiqb891116qe4_csd.key", "rb").read(),
+    password=open("csd/xiqb891116qe4_csd.txt", "r").read(),
+)
+
+print(signer.rfc)          # XIQB891116QE4
+print(signer.legal_name)   # Legal name from certificate
+```
+
+## Ingreso
+
+An **Ingreso** is the most common CFDI type — it documents a sale of goods or services. The example below includes IVA traslado plus ISR and IVA retenciones inside a single concepto:
+
+```python
+from decimal import Decimal
+from satcfdi.models import Signer
+from satcfdi.create.cfd import cfdi40
+from satcfdi.create.cfd.catalogos import (
+    RegimenFiscal, UsoCFDI, MetodoPago, Impuesto, TipoFactor
+)
+
+signer = Signer.load(
+    certificate=open("csd/xiqb891116qe4_csd.cer", "rb").read(),
+    key=open("csd/xiqb891116qe4_csd.key", "rb").read(),
+    password=open("csd/xiqb891116qe4_csd.txt", "r").read(),
+)
+
+invoice = cfdi40.Comprobante(
+    emisor=cfdi40.Emisor(
+        rfc=signer.rfc,
+        nombre=signer.legal_name,
+        regimen_fiscal=RegimenFiscal.GENERAL_DE_LEY_PERSONAS_MORALES,
+    ),
+    lugar_expedicion="56820",
+    receptor=cfdi40.Receptor(
+        rfc="KIJ0906199R1",
+        nombre="KIJ, S.A DE C.V.",
+        uso_cfdi=UsoCFDI.GASTOS_EN_GENERAL,
+        domicilio_fiscal_receptor="59820",
+        regimen_fiscal_receptor=RegimenFiscal.GENERAL_DE_LEY_PERSONAS_MORALES,
+    ),
+    metodo_pago=MetodoPago.PAGO_EN_PARCIALIDADES_O_DIFERIDO,
+    serie="A",
+    folio="123456",
+    conceptos=[
+        cfdi40.Concepto(
+            clave_prod_serv="84111506",
+            cantidad=Decimal("1.00"),
+            clave_unidad="E48",
+            descripcion="SERVICIOS DE FACTURACION",
+            valor_unitario=Decimal("1250.30"),
+            impuestos=cfdi40.Impuestos(
+                traslados=cfdi40.Traslado(
+                    impuesto=Impuesto.IVA,
+                    tipo_factor=TipoFactor.TASA,
+                    tasa_o_cuota=Decimal("0.160000"),
+                ),
+                retenciones=[
+                    cfdi40.Retencion(
+                        impuesto=Impuesto.ISR,
+                        tipo_factor=TipoFactor.TASA,
+                        tasa_o_cuota=Decimal("0.100000"),
+                    ),
+                    cfdi40.Retencion(
+                        impuesto=Impuesto.IVA,
+                        tipo_factor=TipoFactor.TASA,
+                        tasa_o_cuota=Decimal("0.106667"),
+                    ),
+                ],
+            ),
+        )
+    ],
+)
+
+invoice.sign(signer)
+invoice = invoice.process()
+```
+
+<Note>
+`tipo_de_comprobante` defaults to `"I"` (Ingreso). You can also pass any value from `TipoDeComprobante` or a raw SAT key string.
+</Note>
+
+## Nómina
+
+Use the dedicated factory method `Comprobante.nomina()` together with a `nomina12.Nomina` complement. The factory automatically sets `TipoDeComprobante = "N"`, `UsoCFDI = "CN01"`, `MetodoPago = "PUE"`, and computes `SubTotal`/`Total` from the nómina percepciones and deducciones:
+
+```python
+from datetime import date
+from decimal import Decimal
+from satcfdi.models import Signer
+from satcfdi.create.cfd import cfdi40, nomina12
+
+signer = Signer.load(
+    certificate=open("csd/xiqb891116qe4_csd.cer", "rb").read(),
+    key=open("csd/xiqb891116qe4_csd.key", "rb").read(),
+    password=open("csd/xiqb891116qe4_csd.txt", "r").read(),
+)
+
+invoice = cfdi40.Comprobante.nomina(
+    emisor=cfdi40.Emisor(
+        rfc=signer.rfc,
+        nombre=signer.legal_name,
+        regimen_fiscal="601",
+    ),
+    receptor=cfdi40.Receptor(
+        rfc="KIJ0906199R1",
+        nombre="KIJ, S.A DE C.V.",
+        uso_cfdi="CN01",
+        domicilio_fiscal_receptor="59820",
+        regimen_fiscal_receptor="601",
+    ),
+    lugar_expedicion="56820",
+    complemento_nomina=nomina12.Nomina(
+        emisor=nomina12.Emisor(
+            registro_patronal="Z1234567890",
+        ),
+        receptor=nomina12.Receptor(
+            cuenta_bancaria="0001000200030004",
+            curp="XIQB891116MCHZRL72",
+            clave_ent_fed="MOR",
+            num_empleado="12345678",
+            periodicidad_pago="04",
+            tipo_contrato="01",
+            tipo_regimen="02",
+        ),
+        percepciones=nomina12.Percepciones(
+            percepcion=nomina12.Percepcion(
+                tipo_percepcion="001",
+                clave="001",
+                concepto="SUELDO",
+                importe_gravado=Decimal("1200"),
+                importe_exento=Decimal("400"),
+            )
+        ),
+        deducciones=nomina12.Deducciones(
+            deduccion=nomina12.Deduccion(
+                tipo_deduccion="002",
+                clave="300",
+                concepto="ISR A CARGO",
+                importe=Decimal("1234.73"),
+            )
+        ),
+        tipo_nomina="O",
+        fecha_pago=date(2020, 1, 30),
+        fecha_final_pago=date(2020, 1, 31),
+        fecha_inicial_pago=date(2020, 1, 16),
+        num_dias_pagados=Decimal("16.000"),
+    ),
+    serie="A",
+    folio="123456",
+)
+
+invoice.sign(signer)
+invoice = invoice.process()
+```
+
+## Traslado
+
+A **Traslado** CFDI documents the movement of goods without a monetary transaction. Set `tipo_de_comprobante="T"` (or `TipoDeComprobante.TRASLADO`). Typically conceptos have `TipoFactor.EXENTO` or simply no impuestos:
+
+```python
+from decimal import Decimal
+from satcfdi.models import Signer
+from satcfdi.create.cfd import cfdi40
+from satcfdi.create.cfd.catalogos import (
+    RegimenFiscal, UsoCFDI, TipoDeComprobante, Impuesto, TipoFactor
+)
+
+signer = Signer.load(
+    certificate=open("csd/xiqb891116qe4_csd.cer", "rb").read(),
+    key=open("csd/xiqb891116qe4_csd.key", "rb").read(),
+    password=open("csd/xiqb891116qe4_csd.txt", "r").read(),
+)
+
+invoice = cfdi40.Comprobante(
+    emisor=cfdi40.Emisor(
+        rfc=signer.rfc,
+        nombre=signer.legal_name,
+        regimen_fiscal=RegimenFiscal.GENERAL_DE_LEY_PERSONAS_MORALES,
+    ),
+    lugar_expedicion="56820",
+    receptor=cfdi40.Receptor(
+        rfc=signer.rfc,               # self-transfer: emisor == receptor
+        nombre=signer.legal_name,
+        uso_cfdi="S01",               # Sin efectos fiscales
+        domicilio_fiscal_receptor="56820",
+        regimen_fiscal_receptor=RegimenFiscal.GENERAL_DE_LEY_PERSONAS_MORALES,
+    ),
+    tipo_de_comprobante=TipoDeComprobante.TRASLADO,
+    conceptos=[
+        cfdi40.Concepto(
+            clave_prod_serv="24111500",
+            cantidad=Decimal("10"),
+            clave_unidad="KGM",
+            descripcion="Cemento Portland",
+            valor_unitario=Decimal("0"),
+            impuestos=cfdi40.Impuestos(
+                traslados=cfdi40.Traslado(
+                    impuesto=Impuesto.IVA,
+                    tipo_factor=TipoFactor.EXENTO,
+                )
+            ),
+        )
+    ],
+    serie="T",
+    folio="001",
+)
+
+invoice.sign(signer)
+invoice = invoice.process()
+```
+
+## Signing and Processing
+
+<Steps>
+  <Step title="Call invoice.sign(signer)">
+    `sign()` computes the `cadena_original`, signs it with the CSD private key using SHA-256, and stores the resulting base-64 encoded `Sello`, `NoCertificado`, and `Certificado` fields directly on the `Comprobante` object. The document is still an in-memory Python object at this point — no XML has been serialised.
+
+    ```python
+    invoice.sign(signer)
+    ```
+  </Step>
+  <Step title="Call invoice.process()">
+    `process()` serialises the object to an `lxml.etree.Element`, then re-parses it back through `CFDI.from_xml()`. The result is a fully-populated `CFDI` instance whose structure exactly matches what will be stamped by the PAC. Always reassign the return value:
+
+    ```python
+    invoice = invoice.process()
+    ```
+  </Step>
+  <Step title="Send to PAC for stamping">
+    After processing, submit the invoice to a PAC using the `pac.issue()` or `pac.stamp()` method (see the PAC documentation). The PAC adds the `TimbreFiscalDigital` complement.
+
+    ```python
+    from satcfdi.pacs import Accept
+
+    doc = pac.stamp(invoice, accept=Accept.XML_PDF)
+    stamped = doc.cfdi   # CFDI with TimbreFiscalDigital
+    ```
+  </Step>
+</Steps>
+
+<Note>
+The key distinction: **`sign()`** populates the cryptographic fields on the Python object; **`process()`** converts that object to XML and back so that computed fields (like aggregated `Impuestos` totals) are fully resolved. You should always call both before stamping.
+</Note>
+
+## Conceptos and Tax Calculations
+
+Tax amounts — `Base`, `Importe`, `SubTotal`, `Descuento`, `TotalImpuestosTrasladados`, and `TotalImpuestosRetenidos` — are **computed automatically** by `Comprobante.compute()` when the object is constructed. You only need to supply `tasa_o_cuota`; the library calculates everything else.
+
+```python
+from decimal import Decimal
+from satcfdi.create.cfd import cfdi40
+from satcfdi.create.cfd.catalogos import Impuesto, TipoFactor
+
+concepto = cfdi40.Concepto(
+    clave_prod_serv="84111506",
+    cantidad=Decimal("2.00"),
+    clave_unidad="E48",
+    descripcion="CONSULTORÍA",
+    valor_unitario=Decimal("5000.00"),
+    # optional discount
+    descuento=Decimal("500.00"),
+    impuestos=cfdi40.Impuestos(
+        traslados=cfdi40.Traslado(
+            impuesto=Impuesto.IVA,
+            tipo_factor=TipoFactor.TASA,
+            tasa_o_cuota=Decimal("0.160000"),
+        ),
+        retenciones=[
+            cfdi40.Retencion(
+                impuesto=Impuesto.ISR,
+                tipo_factor=TipoFactor.TASA,
+                tasa_o_cuota=Decimal("0.100000"),
+            ),
+            cfdi40.Retencion(
+                impuesto=Impuesto.IVA,
+                tipo_factor=TipoFactor.TASA,
+                tasa_o_cuota=Decimal("0.106667"),
+            ),
+        ],
+    ),
+)
+```
+
+<Tip>
+Pass `Decimal` values (not `float`) to all monetary fields. The library applies rounding according to the number of decimal places defined in the `c_Moneda` SAT catalogue for the currency in use.
+</Tip>
+
+### Available catalog enums
+
+| Enum | Common values |
+|---|---|
+| `RegimenFiscal` | `GENERAL_DE_LEY_PERSONAS_MORALES` (`601`), `SUELDOS_Y_SALARIOS_E_INGRESOS_ASIMILADOS_A_SALARIOS` (`605`), … |
+| `UsoCFDI` | `GASTOS_EN_GENERAL` (`G03`), `NOMINA` (`CN01`), `PAGOS` (`CP01`), … |
+| `MetodoPago` | `PAGO_EN_UNA_SOLA_EXHIBICION` (`PUE`), `PAGO_EN_PARCIALIDADES_O_DIFERIDO` (`PPD`) |
+| `TipoDeComprobante` | `INGRESO` (`I`), `EGRESO` (`E`), `TRASLADO` (`T`), `NOMINA` (`N`), `PAGO` (`P`) |
+| `Impuesto` | `IVA` (`002`), `ISR` (`001`) |
+| `TipoFactor` | `TASA`, `CUOTA`, `EXENTO` |
+
+All enums extend `StrEnum`, so their string values are accepted wherever the SAT schema expects a key code. You can also pass the raw string (`"601"`, `"G03"`, etc.) directly.

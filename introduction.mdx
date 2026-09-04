@@ -1,0 +1,86 @@
+---
+title: "python-satcfdi: Open-Source Python Library for SAT CFDI"
+sidebarTitle: "Introduction"
+description: "python-satcfdi is a complete Python toolkit for Mexican e-invoicing: create, sign, stamp, validate, and download SAT CFDI 3.2/3.3/4.0 comprobantes."
+---
+
+**python-satcfdi** is the best open-source Python library to generate and process Mexico's SAT electronic invoices (CFDI). It covers the full lifecycle of a Mexican fiscal document — from constructing a typed `Comprobante` object through signing with your CSD, timbrado via a PAC, and exporting to XML, HTML, JSON, or PDF — as well as a rich set of integrations with SAT's own web services. Whether you are building an ERP integration, automating payroll receipts, or bulk-downloading historical invoices from the SAT portal, python-satcfdi provides a Pythonic, well-tested foundation.
+
+<CardGroup cols={2}>
+  <Card title="CFDI Creation" icon="file-invoice">
+    Build CFDI 3.2, 3.3, and 4.0 comprobantes (Ingreso, Nómina, Pagos, Traslados) and Retenciones 1.0/2.0 with strongly-typed Python objects and automatic totals calculation.
+  </Card>
+  <Card title="Signing & Validation" icon="lock">
+    Load your CSD certificate with `Signer.load()`, sign the cadena original with SHA-256, and validate the resulting XML against official SAT XSD schemas.
+  </Card>
+  <Card title="PAC Integration" icon="stamp">
+    Send your signed CFDI to one of six supported PACs for timbrado. The library provides a unified interface so switching providers requires changing a single import.
+  </Card>
+  <Card title="SAT Services" icon="building-columns">
+    Automate Descarga Masiva, validate RFCs, download Constancia de Situación Fiscal, submit DIOT declarations, and more through SAT's public web services.
+  </Card>
+  <Card title="Rendering" icon="file-pdf">
+    Produce the official representación impresa in PDF, HTML, or JSON from any loaded or freshly created CFDI using the built-in Jinja2 templates.
+  </Card>
+  <Card title="Excel Export" icon="table">
+    Export one or many comprobantes to a formatted `.xlsx` workbook with `xlsxwriter` for reporting and accounting workflows.
+  </Card>
+</CardGroup>
+
+## Supported CFDI Versions and Document Types
+
+python-satcfdi supports all actively used Mexican fiscal document standards:
+
+| Standard | Versions | Document types |
+|---|---|---|
+| CFDI | 3.2, 3.3, 4.0 | Ingreso, Nómina (Nómina 1.2), Pagos (Pagos 2.0), Traslados, and all official complementos |
+| Retenciones e Información de Pagos | 1.0, 2.0 | Dividendos, Intereses, Arrendamiento, etc. |
+| Contabilidad Electrónica | 1.3 | Catálogo de cuentas, Balanza de comprobación, Pólizas |
+
+<Note>
+  CFDI 4.0 is the current mandatory version for most fiscal documents in Mexico. The library defaults to CFDI 4.0 throughout its `cfdi40` module, while `cfdi33` and `cfdi32` remain available for reading legacy documents.
+</Note>
+
+## Supported PACs
+
+python-satcfdi includes ready-made connectors for the following six Proveedores Autorizados de Certificación (PACs):
+
+<CardGroup cols={3}>
+  <Card title="Comercio Digital" icon="circle-check" />
+  <Card title="Diverza" icon="circle-check" />
+  <Card title="Facturama" icon="circle-check" />
+  <Card title="Finkok" icon="circle-check" />
+  <Card title="Prodigia" icon="circle-check" />
+  <Card title="SW Sapien" icon="circle-check" />
+</CardGroup>
+
+Facturama is supported in both its **Multiemisor** and **Web API** modes. All PAC connectors expose the same `stamp()` / `cancel()` interface, so migrating between providers is a one-line change.
+
+## Supported SAT Services
+
+Beyond CFDI creation and stamping, the library integrates with the following SAT platforms:
+
+- **Descarga Masiva** — programmatically request and download your historical CFDI repository (emitidos and recibidos) from the SAT web service.
+- **Constancia de Situación Fiscal** — download the official tax-status certificate as a PDF for any RFC.
+- **Portal SAT / Factura Electrónica** — validate RFCs and razones sociales, and query the LCO (Lista de Contribuyentes Obligados).
+- **Certifica** — request new CSD certificates and renew your FIEL (e.firma) programmatically.
+- **DIOT** — generate and submit the Declaración Informativa de Operaciones con Terceros.
+- **PLD** — tools for Prevención de Lavado de Dinero compliance reporting.
+- **Listado 69B** — check taxpayers against SAT's published list of companies with non-existent operations.
+
+## Python Version Requirement
+
+<Note>
+  python-satcfdi requires **Python 3.10 or newer**. It is tested against Python 3.10, 3.11, 3.12, 3.13, and 3.14. Older Python releases are not supported because the library uses structural pattern matching (`match`/`case`) introduced in Python 3.10.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install python-satcfdi from PyPI or build from source in under a minute.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Create, sign, and export your first CFDI 4.0 in five steps.
+  </Card>
+</CardGroup>

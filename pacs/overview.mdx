@@ -1,0 +1,263 @@
+---
+title: "PAC Integration: Stamp CFDI with Authorized Providers"
+sidebarTitle: "Overview"
+description: "Learn how to stamp, issue, recover, and cancel CFDI using the PAC base class and the six built-in integrations: Diverza, Finkok, SW Sapien, Facturama, Prodigia, and Comercio Digital."
+---
+
+A **PAC** (Proveedor Autorizado de Certificación) is a third-party company authorized by Mexico's SAT to receive, validate, and seal CFDI comprobantes with the official *TimbreFiscalDigital* complement. Every CFDI must pass through a PAC before it has legal fiscal validity. `python-satcfdi` ships with a unified `PAC` base class and six ready-to-use integrations so you can switch providers without rewriting your stamping logic.
+
+## The PAC Base Class
+
+All PAC integrations inherit from `satcfdi.pacs.PAC`. The constructor always accepts an `environment` parameter that selects between the live SAT infrastructure and the provider's sandbox.
+
+```python
+from satcfdi.pacs import PAC, Environment, Accept
+```
+
+### `Environment`
+
+| Value | Description |
+|-------|-------------|
+| `Environment.PRODUCTION` | Live SAT web services — real fiscal documents |
+| `Environment.TEST` | PAC sandbox / demo endpoints — no fiscal effect |
+
+### `Accept`
+
+`Accept` is a **flag enum** that controls which file formats the PAC should return. Values can be combined with the bitwise OR operator (`|`).
+
+| Value | Description |
+|-------|-------------|
+| `Accept.NOTHING` | No file content returned (operation only) |
+| `Accept.XML` | Return the stamped XML bytes |
+| `Accept.PDF` | Return the generated PDF bytes |
+| `Accept.XML_PDF` | Return both XML **and** PDF (`Accept.XML \| Accept.PDF`) |
+
+<Tip>
+  Always use `Environment.TEST` during development and integration testing. Switching to production is a one-line change once your flow is verified.
+</Tip>
+
+---
+
+## Available PAC Integrations
+
+Each PAC class lives in its own module under `satcfdi.pacs` and accepts provider-specific credentials in its constructor.
+
+<CardGroup cols={2}>
+  <Card title="Diverza" icon="file-invoice">
+    **Module:** `satcfdi.pacs.diverza.Diverza`
+
+    **RFC:** `SNF171020F3A`
+
+    REST JSON API. Constructor takes `rfc`, `id`, and `token`.
+
+    ```python
+    from satcfdi.pacs.diverza import Diverza
+
+    pac = Diverza(
+        rfc="XAXX010101000",
+        id="your-client-id",
+        token="your-token",
+        environment=Environment.TEST,
+    )
+    ```
+  </Card>
+
+  <Card title="Finkok" icon="file-invoice">
+    **Module:** `satcfdi.pacs.finkok.Finkok`
+
+    **RFC:** `FIN1203015JA`
+
+    SOAP API. Constructor takes `username` and `password`.
+
+    ```python
+    from satcfdi.pacs.finkok import Finkok
+
+    pac = Finkok(
+        username="user@email.com",
+        password="password_or_token",
+        environment=Environment.TEST,
+    )
+    ```
+  </Card>
+
+  <Card title="SW Sapien" icon="file-invoice">
+    **Module:** `satcfdi.pacs.swsapien.SWSapien`
+
+    **RFC:** `LSO1306189R5`
+
+    REST API (Luna Soft / SmarterWEB). Constructor takes either a static `token` or `user`/`password` for auto-refreshing tokens.
+
+    ```python
+    from satcfdi.pacs.swsapien import SWSapien
+
+    pac = SWSapien(
+        token="your-bearer-token",
+        environment=Environment.TEST,
+    )
+    ```
+  </Card>
+
+  <Card title="Facturama" icon="file-invoice">
+    **Module:** `satcfdi.pacs.facturama.Facturama`
+
+    **RFC:** N/A (aggregates multiple PACs)
+
+    REST JSON API (Multiemisor). Constructor takes `username` and `password`. CSD must be uploaded via `upload_csd()` before issuing. Use `FacturamaWeb` for the single-issuer API Web variant.
+
+    ```python
+    from satcfdi.pacs.facturama import Facturama
+
+    pac = Facturama(
+        username="your-username",
+        password="your-password",
+        environment=Environment.TEST,
+    )
+    ```
+  </Card>
+
+  <Card title="Prodigia" icon="file-invoice">
+    **Module:** `satcfdi.pacs.prodigia.Prodigia`
+
+    **RFC:** `PPD101129EA3`
+
+    REST API (PADE). Constructor takes `user`, `password`, and `contrato`.
+
+    ```python
+    from satcfdi.pacs.prodigia import Prodigia
+
+    pac = Prodigia(
+        user="1234",
+        password="pass",
+        contrato="1234",
+        environment=Environment.TEST,
+    )
+    ```
+  </Card>
+
+  <Card title="Comercio Digital" icon="file-invoice">
+    **Module:** `satcfdi.pacs.comerciodigital.ComercioDigital`
+
+    **RFC:** `SCD110105654`
+
+    REST XML API. Constructor takes `user` and `password`.
+
+    ```python
+    from satcfdi.pacs.comerciodigital import ComercioDigital
+
+    pac = ComercioDigital(
+        user="your-user",
+        password="your-password",
+        environment=Environment.TEST,
+    )
+    ```
+  </Card>
+</CardGroup>
+
+---
+
+## Common Operations
+
+All PAC integrations share the same interface defined on the `PAC` base class. The examples below use a generic `pac` variable — substitute any of the six providers above.
+
+### Stamp a CFDI
+
+Use `stamp()` when **you** have already signed the CFDI with your CSD and only need the PAC to apply the *timbrado* seal.
+
+```python
+from satcfdi.pacs import Accept
+
+# invoice is a signed CFDI object
+doc = pac.stamp(invoice, accept=Accept.XML)
+
+with open("stamped_invoice.xml", "wb") as f:
+    f.write(doc.xml)
+```
+
+To also receive a PDF in the same call:
+
+```python
+doc = pac.stamp(invoice, accept=Accept.XML_PDF)
+
+with open("stamped_invoice.xml", "wb") as f:
+    f.write(doc.xml)
+
+with open("stamped_invoice.pdf", "wb") as f:
+    f.write(doc.pdf)
+```
+
+### Issue a CFDI
+
+Use `issue()` when you want the PAC to **both sign and stamp** the document on your behalf. The PAC receives an unsigned (or pre-built) CFDI, applies your registered CSD, and returns the timbrado result.
+
+```python
+doc = pac.issue(invoice, accept=Accept.XML)
+```
+
+<Note>
+  **`stamp()` vs `issue()`** — With `stamp()` your application signs the CFDI with your CSD locally and sends the signed XML; the PAC only applies the *TimbreFiscalDigital* complement. With `issue()` the PAC signs the document using credentials registered in their system (e.g. an uploaded CSD). Choose based on where your signing keys live and your provider's capabilities.
+</Note>
+
+### Recover a Previously Stamped Document
+
+If you need to retrieve a stamped CFDI by its UUID after the original request:
+
+```python
+doc = pac.recover(
+    document_id="3c168f6b-5a1e-4c23-a9e1-0b5a3d9c6f2e",
+    accept=Accept.XML,
+)
+```
+
+### Query CFDI Status
+
+Check whether a CFDI is currently *Vigente* (active) or *Cancelado* (cancelled) according to the PAC:
+
+```python
+status = pac.status(cfdi)
+print(status)
+```
+
+### Cancel a CFDI
+
+```python
+from satcfdi.pacs import CancelReason
+
+ack = pac.cancel(
+    cfdi=invoice,
+    reason=CancelReason.COMPROBANTE_EMITIDO_CON_ERRORES_SIN_RELACION,
+    signer=signer,  # required by some PACs (e.g. Finkok)
+)
+print(ack.code)
+```
+
+---
+
+## The `Document` Dataclass
+
+Every stamping operation returns a `Document` instance:
+
+```python
+from satcfdi.pacs import Document
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `document_id` | `str` | The UUID assigned by the PAC (folio fiscal) |
+| `xml` | `bytes \| None` | Raw bytes of the stamped XML, if `Accept.XML` was requested |
+| `pdf` | `bytes \| None` | Raw bytes of the generated PDF, if `Accept.PDF` was requested |
+| `cfdi` *(property)* | `CFDI` | Parses `xml` and returns a `CFDI` object via `CFDI.from_string()` |
+
+```python
+doc = pac.stamp(invoice, accept=Accept.XML)
+
+# Access the UUID
+print(doc.document_id)
+
+# Parse the stamped XML back into a CFDI object
+cfdi_obj = doc.cfdi
+print(cfdi_obj["Complemento"]["TimbreFiscalDigital"]["UUID"])
+
+# Write the XML to disk
+with open("timbrado.xml", "wb") as f:
+    f.write(doc.xml)
+```

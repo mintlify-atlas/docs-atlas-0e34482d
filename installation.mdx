@@ -1,0 +1,130 @@
+---
+title: "Install python-satcfdi via pip or from Source"
+sidebarTitle: "Installation"
+description: "Install the satcfdi Python package from PyPI with pip, or clone and build from source. Requires Python 3.10 or newer."
+---
+
+python-satcfdi is published to PyPI under the package name `satcfdi` and can be installed with a single `pip` command. Because the library depends on [WeasyPrint](https://weasyprint.org/) for PDF rendering, a small number of system-level libraries (Pango, cairo, GLib) must also be present on your machine — the steps below call this out explicitly. For CI and server environments, installing from source gives you full control over the build.
+
+## Install from PyPI
+
+<Steps>
+  <Step title="Verify your Python version">
+    python-satcfdi requires **Python 3.10 or newer**. Check what you have before installing:
+
+    ```bash
+    python --version
+    # Python 3.10.x or later is required
+    ```
+
+    If your default `python` points to Python 2, use `python3` (or a virtual-environment tool such as `pyenv` or `venv`) to target the correct interpreter.
+  </Step>
+
+  <Step title="Install from PyPI">
+    Use `pip` (or `python -m pip`) to install the `satcfdi` package and all of its required dependencies in one command:
+
+    ```bash
+    python -m pip install satcfdi
+    ```
+
+    This installs the latest stable release along with all `install_requires` dependencies listed in `setup.py`.
+  </Step>
+
+  <Step title="Verify the installation">
+    Confirm that the package was installed correctly by importing it and printing the version:
+
+    ```bash
+    python -c "from satcfdi import __version__; print(__version__.__version__)"
+    ```
+
+    You should see a version string such as `1.x.y` printed to stdout. You can also verify the CLI entry point:
+
+    ```bash
+    satcfdi help
+    ```
+  </Step>
+</Steps>
+
+## Install from Source
+
+If you need the latest unreleased changes or want to contribute to the project, clone the repository and install directly:
+
+```bash
+git clone https://github.com/SAT-CFDI/python-satcfdi
+cd python-satcfdi
+python -m pip install .
+```
+
+To install in **editable mode** (so changes to the source are reflected immediately without reinstalling):
+
+```bash
+python -m pip install -e .
+```
+
+## Optional Extras
+
+python-satcfdi ships two optional dependency groups declared in `setup.py`:
+
+<CodeGroup>
+  ```bash Test dependencies
+  # Installs coverage, pytest, and PyYAML
+  python -m pip install "satcfdi[test]"
+  ```
+
+  ```bash Documentation dependencies
+  # Installs Sphinx >= 5.3.0 and sphinx-rtd-theme >= 1.1.1
+  python -m pip install "satcfdi[docs]"
+  ```
+</CodeGroup>
+
+Install both at once if you are contributing to the project:
+
+```bash
+python -m pip install "satcfdi[test,docs]"
+```
+
+## WeasyPrint and System Dependencies
+
+<Warning>
+  PDF rendering relies on **WeasyPrint**, which in turn requires system-level libraries: **Pango**, **cairo**, **GLib**, and their associated font tools. If these are missing, `import weasyprint` will fail silently and `render.pdf_write()` / `render.pdf_bytes()` will raise an `ImportError` at runtime.
+</Warning>
+
+Install the required system packages before using PDF output:
+
+<CodeGroup>
+  ```bash Ubuntu / Debian
+  sudo apt-get install libpango-1.0-0 libpangoft2-1.0-0 libcairo2 libgdk-pixbuf2.0-0
+  ```
+
+  ```bash macOS (Homebrew)
+  brew install pango cairo gdk-pixbuf libffi
+  ```
+
+  ```bash Windows
+  # WeasyPrint provides an installer and GTK3 runtime bundle.
+  # See https://doc.courtbouillon.org/weasyprint/stable/first_steps.html
+  ```
+</CodeGroup>
+
+<Note>
+  HTML and XML rendering do **not** require WeasyPrint. If you only need `render.html_write()` or `render.json_write()`, the default `pip install satcfdi` is sufficient.
+</Note>
+
+## Key Dependencies
+
+The following packages are installed automatically as part of `satcfdi`'s required dependencies:
+
+| Package | Purpose |
+|---|---|
+| `jinja2 >= 3.0.0` | HTML / PDF template rendering |
+| `lxml >= 4.9.0` | XML parsing, serialization, and XSD validation |
+| `weasyprint >= 57.0` | PDF generation from HTML |
+| `requests >= 2.0.0` | HTTP communication with PACs and SAT web services |
+| `cryptography >= 43.0.3` | CSD key loading and SHA-256 signing |
+| `pyOpenSSL >= 22.0.0` | Certificate handling |
+| `qrcode >= 8.2` | QR code generation for the representación impresa |
+| `xlsxwriter >= 3.0.0` | Excel export |
+| `pytz >= 2022.5` | Timezone handling for CFDI timestamps |
+| `beautifulsoup4 > 4.11.0` | HTML parsing for SAT portal integrations |
+| `tabulate >= 0.9.0` | Tabular output for CLI commands |
+| `packaging >= 21.0` | Version comparison utilities |

@@ -1,0 +1,240 @@
+---
+title: "CFDI Complementos: Pagos, Carta Porte, and More"
+sidebarTitle: "Complementos"
+description: "Attach official SAT complementos to CFDI 4.0 comprobantes including Pagos 2.0, Carta Porte 3.1, INE, ImpLocalFiscal, and others from the cfdi40 module."
+---
+
+A **complemento** is an official SAT extension node that is embedded inside the `<Complemento>` element of a CFDI comprobante. Each complemento follows its own versioned XML schema and captures industry- or activity-specific information that the base comprobante schema does not cover — for example, payment receipts, bill-of-lading details, electoral expense reports, or local tax breakdowns. The `python-satcfdi` library ships with pre-built classes for every published SAT complemento, organised under `satcfdi.create.cfd`.
+
+## Pagos 2.0
+
+The **Pagos 2.0** complemento (`pago20`) is used on CFDI type **P** (Pago) to document the receipt of a payment against one or more previously issued Ingreso invoices. Use the `Comprobante.pago()` factory method so that the required type, currency, and concepto are set automatically:
+
+```python
+from datetime import datetime
+from decimal import Decimal
+from satcfdi.models import Signer
+from satcfdi.create.cfd import cfdi40, pago20
+
+signer = Signer.load(
+    certificate=open("csd/xiqb891116qe4_csd.cer", "rb").read(),
+    key=open("csd/xiqb891116qe4_csd.key", "rb").read(),
+    password=open("csd/xiqb891116qe4_csd.txt", "r").read(),
+)
+
+invoice = cfdi40.Comprobante.pago(
+    emisor=cfdi40.Emisor(
+        rfc=signer.rfc,
+        nombre=signer.legal_name,
+        regimen_fiscal="601",
+    ),
+    receptor=cfdi40.Receptor(
+        rfc="KIJ0906199R1",
+        nombre="KIJ, S.A DE C.V.",
+        uso_cfdi="CP01",              # set automatically by the factory
+        domicilio_fiscal_receptor="59820",
+        regimen_fiscal_receptor="601",
+    ),
+    lugar_expedicion="56820",
+    complemento_pago=pago20.Pagos(
+        pago=pago20.Pago(
+            fecha_pago=datetime(2024, 3, 15, 12, 0, 0),
+            forma_de_pago_p="03",     # Transferencia electrónica de fondos
+            moneda_p="MXN",
+            docto_relacionado=pago20.DoctoRelacionado(
+                id_documento="d6042dc8-d525-4e78-8d1b-092c878bd518",
+                moneda_dr="MXN",
+                num_parcialidad=1,
+                imp_saldo_ant=Decimal("1450.35"),
+                imp_pagado=Decimal("1450.35"),
+                objeto_imp_dr="02",
+            ),
+        )
+    ),
+    serie="P",
+    folio="0001",
+)
+
+invoice.sign(signer)
+invoice = invoice.process()
+```
+
+<Note>
+`pago20.Pagos` automatically computes `Monto`, `ImpSaldoInsoluto`, `ImpuestosP`, and the `Totales` node — you only supply the raw amounts.
+</Note>
+
+### Building a Pago from an existing CFDI
+
+When you already have the stamped CFDI file, use `Comprobante.pago_comprobantes()` to derive all document-relationship data automatically:
+
+```python
+from datetime import datetime
+from satcfdi.cfdi import CFDI
+from satcfdi.create.cfd import cfdi40
+
+cfdi = CFDI.from_file("factura_001.xml")
+
+invoice = cfdi40.Comprobante.pago_comprobantes(
+    comprobantes=cfdi,
+    fecha_pago=datetime(2024, 3, 15, 12, 0, 0),
+    forma_pago="03",
+    serie="P",
+    folio="0001",
+)
+invoice.sign(signer)
+invoice = invoice.process()
+```
+
+## Carta Porte 3.1
+
+**Carta Porte** (`cartaporte31`) is required for CFDI that accompany the transportation of goods on federal roads. The complemento captures detailed information about the merchandise, transport vehicle, drivers, and route. Attach a `CartaPorte` instance to a standard Ingreso or Traslado comprobante via the `complemento` parameter:
+
+```python
+from satcfdi.create.cfd import cfdi40, cartaporte31
+
+carta_porte = cartaporte31.CartaPorte(
+    transp_internac="No",
+    total_dist_rec=Decimal("150"),
+    # ... mercancias, ubicaciones, autotransporte, etc.
+)
+
+invoice = cfdi40.Comprobante(
+    # ... emisor, receptor, conceptos ...
+    complemento=carta_porte,
+)
+```
+
+<Tip>
+Carta Porte has many required nested nodes (ubicaciones, mercancias, autotransporte, figuras de transporte). Refer to the SAT's technical annex and the `cartaporte31` module docstrings for the full parameter list.
+</Tip>
+
+## Available Complemento Modules
+
+The following complemento modules are bundled in `satcfdi.create.cfd`. Import the one you need and instantiate its main class:
+
+<CardGroup cols={2}>
+  <Card title="pago20" icon="money-bill-wave">
+    **Pagos 2.0** — Payment receipt for PPD invoices (`Pagos`, `Pago`, `DoctoRelacionado`)
+  </Card>
+  <Card title="cartaporte31" icon="truck">
+    **Carta Porte 3.1** — Bill of lading for goods transportation (`CartaPorte`)
+  </Card>
+  <Card title="nomina12" icon="users">
+    **Nómina 1.2** — Payroll comprobante complement (`Nomina`, `Emisor`, `Receptor`, `Percepciones`, `Deducciones`)
+  </Card>
+  <Card title="ine11" icon="landmark">
+    **INE 1.1** — Electoral expense reports (`INE`)
+  </Card>
+  <Card title="implocal10" icon="building-columns">
+    **ImpLocalFiscal 1.0** — Local tax breakdowns (`ImpuestosLocales`)
+  </Card>
+  <Card title="cce20" icon="globe">
+    **ComercioExterior 2.0** — Foreign trade data (`ComercioExterior`)
+  </Card>
+  <Card title="leyendasFisc10" icon="scroll">
+    **LeyendasFiscales 1.0** — Tax legend text (`LeyendasFiscales`)
+  </Card>
+  <Card title="aerolineas10" icon="plane">
+    **Aerolíneas 1.0** — Airline cargo supplement (`AerolineasComplemento`)
+  </Card>
+  <Card title="donat11" icon="hand-holding-heart">
+    **Donatarias 1.1** — Authorized donation organizations (`Donatarias`)
+  </Card>
+  <Card title="valesdedespensa10" icon="gift">
+    **ValesDeDespensa 1.0** — Food voucher details (`ValesDeDespensa`)
+  </Card>
+  <Card title="spei" icon="money-bill-transfer">
+    **SPEI** — Third-party SPEI transfer details (`SPEI`)
+  </Card>
+  <Card title="pfic10" icon="file-invoice">
+    **PFIC 1.0** — Passive foreign investment company information (`PFIC`)
+  </Card>
+</CardGroup>
+
+<Accordion title="Full list of available modules">
+| Module | Complemento | Main class |
+|---|---|---|
+| `aerolineas10` | Aerolíneas 1.0 | `AerolineasComplemento` |
+| `aieps10` | AIEPS 1.0 | `AIEPS` |
+| `cartaporte10` | Carta Porte 1.0 | `CartaPorte` |
+| `cartaporte20` | Carta Porte 2.0 | `CartaPorte` |
+| `cartaporte30` | Carta Porte 3.0 | `CartaPorte` |
+| `cartaporte31` | Carta Porte 3.1 | `CartaPorte` |
+| `cce10` | Comercio Exterior 1.0 | `ComercioExterior` |
+| `cce11` | Comercio Exterior 1.1 | `ComercioExterior` |
+| `cce20` | Comercio Exterior 2.0 | `ComercioExterior` |
+| `consumodecombustibles10` | Consumo de Combustibles 1.0 | `ConsumoDeCombustibles` |
+| `consumodecombustibles11` | Consumo de Combustibles 1.1 | `ConsumoDeCombustibles` |
+| `decreto10` | Decreto 1.0 | `Decreto` |
+| `destruccion10` | Destrucción 1.0 | `Destruccion` |
+| `divisas10` | Divisas 1.0 | `Divisas` |
+| `donat11` | Donatarias 1.1 | `Donatarias` |
+| `ecb10` | ECB 1.0 | `ECB` |
+| `gceh10` | GCEH 1.0 | `GCEH` |
+| `hidrocarburospetroliferos10` | Hidrocarburos 1.0 | — |
+| `iedu10` | IEDU 1.0 | `instEducativas` |
+| `ieeh10` | IEEH 1.0 | `IEEH` |
+| `implocal10` | ImpLocalFiscal 1.0 | `ImpuestosLocales` |
+| `ine11` | INE 1.1 | `INE` |
+| `leyendasFisc10` | LeyendasFiscales 1.0 | `LeyendasFiscales` |
+| `nomina12` | Nómina 1.2 | `Nomina` |
+| `notariospublicos10` | NotariosPublicos 1.0 | `NotariosPublicos` |
+| `obrasarte10` | ObrasArte 1.0 | `ObrasArte` |
+| `pago10` | Pagos 1.0 (legacy) | `Pagos` |
+| `pago20` | Pagos 2.0 | `Pagos` |
+| `pagoenespecie10` | PagoEnEspecie 1.0 | `PagoEnEspecie` |
+| `pfic10` | PFIC 1.0 | `PFIC` |
+| `servicioparcial10` | ServicioParcialConstruccion 1.0 | `parcialesconstruccion` |
+| `spei` | SPEI | `SPEI` |
+| `valesdedespensa10` | ValesDeDespensa 1.0 | `ValesDeDespensa` |
+| `vehiculousado10` | VehiculoUsado 1.0 | `VehiculoUsado` |
+| `ventavehiculos11` | VentaVehiculos 1.1 | `VentaVehiculos` |
+</Accordion>
+
+## Attaching a Complemento to a Comprobante
+
+Every complemento is passed through the `complemento` parameter of `cfdi40.Comprobante`. You can pass a single object or a list when multiple complementos are required:
+
+```python
+from satcfdi.create.cfd import cfdi40, implocal10, leyendasFisc10
+from decimal import Decimal
+
+# Single complemento
+invoice = cfdi40.Comprobante(
+    # ... emisor, receptor, conceptos ...
+    complemento=implocal10.ImpuestosLocales(
+        total_de_traslados_locales=Decimal("150.00"),
+        total_de_retenciones_locales=Decimal("0"),
+        traslados_locales=implocal10.TrasladosLocales(
+            imp_loc_trasladado="ISH",
+            tasa_de_traslado=Decimal("0.03"),
+            importe=Decimal("150.00"),
+        ),
+    ),
+)
+
+# Multiple complementos
+invoice = cfdi40.Comprobante(
+    # ... emisor, receptor, conceptos ...
+    complemento=[
+        implocal10.ImpuestosLocales(
+            total_de_traslados_locales=Decimal("150.00"),
+            total_de_retenciones_locales=Decimal("0"),
+            traslados_locales=implocal10.TrasladosLocales(
+                imp_loc_trasladado="ISH",
+                tasa_de_traslado=Decimal("0.03"),
+                importe=Decimal("150.00"),
+            ),
+        ),
+        leyendasFisc10.LeyendasFiscales(
+            leyenda=leyendasFisc10.Leyenda(
+                texto_leyenda="Operación sujeta a revisión",
+            )
+        ),
+    ],
+)
+```
+
+<Tip>
+Always use the **latest SAT-required version** of each complemento. For example, Pagos 2.0 replaced Pagos 1.0 in January 2022, and Carta Porte 3.1 replaced 3.0 in 2024. The version is embedded in the module name (e.g. `pago20`, `cartaporte31`).
+</Tip>

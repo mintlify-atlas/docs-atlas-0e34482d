@@ -1,0 +1,223 @@
+---
+title: "Generate DIOT Reports for SAT"
+sidebarTitle: "DIOT"
+description: "Build and submit Declaración Informativa de Operaciones con Terceros (DIOT) packages using python-satcfdi, including proveedor data and complementary period information."
+---
+
+The **DIOT** (Declaración Informativa de Operaciones con Terceros) is a monthly or periodic informational return that VAT-registered taxpayers must file with SAT, reporting the amounts paid to each supplier along with the corresponding IVA breakdown. `python-satcfdi` provides a full object model to construct, validate, export, and render DIOT packages in SAT's encrypted `.dec` format.
+
+## DIOT with No Operations
+
+When a taxpayer has no third-party operations to report for a period, you can file a DIOT with an empty providers list. Only `DatosIdentificacion` and `periodo` are required.
+
+```python
+from satcfdi.diot import DIOT, DatosIdentificacion, Periodo
+
+diot = DIOT(
+    datos_identificacion=DatosIdentificacion(
+        rfc="OÑO120726RX3",
+        razon_social="ORGANICOS ÑAVEZ OSORIO S.A DE C.V",
+        ejercicio=2021,
+    ),
+    periodo=Periodo.ENERO
+)
+
+package = diot.generate_package()
+print(package)  # path to the generated .dec file
+```
+
+<Note>
+  For a **Persona Física** taxpayer, provide `curp`, `nombre`, `apellido_paterno`, and `apellido_materno` instead of `razon_social`.
+</Note>
+
+## DIOT with Operations
+
+When operations exist, add one or more `ProveedorTercero` entries. Each entry specifies the supplier type (`TipoTercero`), the operation type (`TipoOperacion`), and the monetary amounts for each IVA category.
+
+```python
+from datetime import date
+from satcfdi import render
+from satcfdi.diot import (
+    DIOT, DatosIdentificacion, DatosComplementaria,
+    ProveedorTercero, TipoTercero, TipoOperacion, Periodo, Pais
+)
+
+diot = DIOT(
+    datos_identificacion=DatosIdentificacion(
+        rfc="OÑO120726RX3",
+        razon_social="ORGANICOS ÑAVEZ OSORIO S.A DE C.V",
+        ejercicio=2021,
+    ),
+    periodo=Periodo.JULIO_SEPTIEMBRE,
+    complementaria=DatosComplementaria(
+        folio_anterior="12313",
+        fecha_presentacion_anterior=date(2021, 5, 10)
+    ),
+    proveedores=[
+        ProveedorTercero(
+            tipo_tercero=TipoTercero.PROVEEDOR_EXTRANJERO,
+            tipo_operacion=TipoOperacion.OTROS,
+            id_fiscal="1254TAXID",
+            nombre_extranjero="NOMBREEXTRANJERO",
+            pais=Pais.ANTIGUA_Y_BERMUDA,
+            nacionalidad="BERMUDO",
+            iva16=456,
+            iva16_na=752,
+            iva_rfn=782,
+            iva_rfn_na=456,
+            iva_import16=123,
+            iva_import16_na=475,
+            iva_import_exento=7575,
+            iva0=45213,
+            iva_exento=1247,
+            retenido=235,
+            devoluciones=786
+        ),
+        ProveedorTercero(
+            tipo_tercero=TipoTercero.PROVEEDOR_GLOBAL,
+            tipo_operacion=TipoOperacion.ARRENDAMIENTO_DE_INMUEBLES,
+            iva16=9874,
+            iva16_na=8521,
+            iva_rfn=7632,
+            iva_rfn_na=6541,
+            iva_import16=5241,
+            iva_import16_na=4123,
+            iva_import_exento=3562,
+            iva0=2415,
+            iva_exento=1235,
+            retenido=985,
+            devoluciones=874
+        ),
+        ProveedorTercero(
+            tipo_tercero=TipoTercero.PROVEEDOR_NACIONAL,
+            tipo_operacion=TipoOperacion.OTROS,
+            rfc="L&O950913MSA",
+            iva16=96208900,
+            iva16_na=85100,
+            iva_rfn=74300,
+            iva_rfn_na=67600,
+            iva0=58900,
+            iva_exento=47700,
+            retenido=36400,
+            devoluciones=24864
+        ),
+        ProveedorTercero(
+            tipo_tercero=TipoTercero.PROVEEDOR_GLOBAL,
+            tipo_operacion=TipoOperacion.PRESTACION_DE_SERVICIOS_PROFESIONALES,
+            iva16=77757987856,
+        ),
+        ProveedorTercero(
+            tipo_tercero=TipoTercero.PROVEEDOR_NACIONAL,
+            tipo_operacion=TipoOperacion.PRESTACION_DE_SERVICIOS_PROFESIONALES,
+            rfc="IXS7607092R5",
+            iva16_na=500,
+            iva_rfn=0
+        )
+    ]
+)
+
+package = diot.generate_package()
+print(package)
+```
+
+<Note>
+  `PROVEEDOR_NACIONAL` requires a `rfc`. `PROVEEDOR_GLOBAL` must **not** include a `rfc`. `PROVEEDOR_EXTRANJERO` can include `id_fiscal`, `nombre_extranjero`, `pais`, and `nacionalidad` instead.
+</Note>
+
+## Generating the Package
+
+`diot.generate_package()` serializes the DIOT into SAT's encrypted `.dec` format (Triple-DES encrypted ZIP, wrapped in an ASN.1/PKCS envelope) and writes it to disk.
+
+```python
+# Save to current directory (returns the filename)
+out_file = diot.generate_package()
+print(out_file)
+
+# Save to a specific directory
+out_file = diot.generate_package(dirname="output/")
+print(out_file)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `dirname` | `str \| None` | `None` | Directory to write the `.dec` file into. `None` writes to the current directory. |
+| `filename` | `str \| None` | `None` | Override the auto-generated filename. |
+
+The method returns the full path of the written file as a string.
+
+## Rendering DIOT to PDF
+
+You can render a DIOT object to a human-readable PDF using the `render` module:
+
+```python
+from satcfdi import render
+
+render.pdf_write(diot, 'diot.pdf')
+```
+
+This produces a formatted PDF that mirrors the official DIOT layout, suitable for review and record-keeping.
+
+## TipoTercero
+
+`TipoTercero` classifies the supplier type for each `ProveedorTercero` entry:
+
+| Enum Value | Code | Description |
+|------------|------|-------------|
+| `PROVEEDOR_NACIONAL` | `04` | Domestic (Mexican) supplier with a valid RFC |
+| `PROVEEDOR_EXTRANJERO` | `05` | Foreign supplier identified by tax ID and country |
+| `PROVEEDOR_GLOBAL` | `15` | Aggregated global entry (no individual RFC) |
+
+## TipoOperacion
+
+`TipoOperacion` specifies the nature of the commercial relationship:
+
+| Enum Value | Code | Description |
+|------------|------|-------------|
+| `PRESTACION_DE_SERVICIOS_PROFESIONALES` | `03` | Professional services |
+| `ARRENDAMIENTO_DE_INMUEBLES` | `06` | Real estate leasing |
+| `OTROS` | `85` | Other operations |
+
+## Periodo
+
+`Periodo` identifies the reporting period. Monthly values map to calendar months; the remaining values represent bi-monthly, quarterly, quadri-monthly, semi-annual, or annual ranges.
+
+<Accordion title="Monthly Periods">
+
+| Enum Value | Code |
+|------------|------|
+| `ENERO` | `01` |
+| `FEBRERO` | `02` |
+| `MARZO` | `03` |
+| `ABRIL` | `04` |
+| `MAYO` | `05` |
+| `JUNIO` | `06` |
+| `JULIO` | `07` |
+| `AGOSTO` | `08` |
+| `SEPTIEMBRE` | `09` |
+| `OCTUBRE` | `10` |
+| `NOVIEMBRE` | `11` |
+| `DICIEMBRE` | `12` |
+
+</Accordion>
+
+<Accordion title="Multi-Month Periods">
+
+| Enum Value | Code | Range |
+|------------|------|-------|
+| `ENERO_FEBRERO` | `13` | Jan – Feb |
+| `MARZO_ABRIL` | `14` | Mar – Apr |
+| `MAYO_JUNIO` | `15` | May – Jun |
+| `JULIO_AGOSTO` | `16` | Jul – Aug |
+| `SEPTIEMBRE_OCTUBRE` | `17` | Sep – Oct |
+| `NOVIEMBRE_DICIEMBRE` | `18` | Nov – Dec |
+| `ENERO_MARZO` | `19` | Jan – Mar (Q1) |
+| `ABRIL_JUNIO` | `20` | Apr – Jun (Q2) |
+| `JULIO_SEPTIEMBRE` | `21` | Jul – Sep (Q3) |
+| `OCTUBRE_DICIEMBRE` | `22` | Oct – Dec (Q4) |
+| `ENERO_ABRIL` | `23` | Jan – Apr |
+| `MAYO_AGOSTO` | `24` | May – Aug |
+| `SEPTIEMBRE_DICIEMBRE` | `25` | Sep – Dec |
+| `ENERO_JUNIO` | `26` | Jan – Jun (H1) |
+| `JULIO_DICIEMBRE` | `27` | Jul – Dec (H2) |
+
+</Accordion>

@@ -1,47 +1,218 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with python-satcfdi in 5 Minutes"
+sidebarTitle: "Quickstart"
+description: "Learn how to install satcfdi, load a CSD certificate, create a CFDI 4.0 Comprobante, sign it, and export to XML and PDF in five steps."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
+This guide walks you through the complete happy path: installing the library, preparing your CSD files, loading the signer, building a CFDI 4.0 `Comprobante` with an IVA-taxed concept, signing it, and writing the result to disk as both XML and PDF. All code comes directly from the library's source — no invented API signatures.
 
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+## Create and Sign Your First CFDI
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Install python-satcfdi">
+    Install the package from PyPI. Python 3.10 or newer is required.
 
     ```bash
-    npm install your-package
+    python -m pip install satcfdi
+    ```
+
+    For PDF output you will also need the WeasyPrint system dependencies (Pango, cairo). See the [Installation guide](/installation) for platform-specific instructions.
+  </Step>
+
+  <Step title="Prepare your CSD certificate files">
+    The SAT issues each taxpayer a **Certificado de Sello Digital (CSD)** consisting of three files. Place them in a directory accessible to your script:
+
+    | File | Description |
+    |---|---|
+    | `*.cer` | Public certificate in DER format |
+    | `*.key` | Private key in DER format |
+    | `*.txt` | Plain-text password that protects the private key |
+
+    ```
+    csd/
+    ├── xiqb891116qe4_csd.cer
+    ├── xiqb891116qe4_csd.key
+    └── xiqb891116qe4_csd.txt
+    ```
+
+    <Warning>
+      Never commit your `.key` or `.txt` files to version control. Add them to `.gitignore` and load them from environment variables or a secrets manager in production.
+    </Warning>
+  </Step>
+
+  <Step title="Load the Signer">
+    `Signer.load()` reads your three CSD files, decrypts the private key with the password, and exposes the RFC and legal name extracted from the certificate. These are used directly when constructing the `Emisor` node.
+
+    ```python
+    from satcfdi.models import Signer
+
+    signer = Signer.load(
+        certificate=open('csd/xiqb891116qe4_csd.cer', 'rb').read(),
+        key=open('csd/xiqb891116qe4_csd.key', 'rb').read(),
+        password=open('csd/xiqb891116qe4_csd.txt', 'r').read()
+    )
+
+    print(signer.rfc)          # e.g. "XIQB891116QE4"
+    print(signer.legal_name)   # e.g. "BEATRIZ EUGENIA XIQ..."
     ```
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
 
-    ```bash
-    your-cli init
+  <Step title="Create a CFDI 4.0 Comprobante">
+    Build the `Comprobante` using the `cfdi40` module. The example below creates an **Ingreso** invoice for a single service concept with IVA (16 %) trasladado and ISR + IVA retenciones. The library automatically calculates subtotals, tax totals, and the document total.
+
+    ```python
+    from decimal import Decimal
+    from satcfdi.models import Signer
+    from satcfdi.create.cfd import cfdi40
+    from satcfdi.create.cfd.catalogos import (
+        RegimenFiscal,
+        UsoCFDI,
+        MetodoPago,
+        Impuesto,
+        TipoFactor,
+    )
+
+    # --- Emisor ---
+    invoice = cfdi40.Comprobante(
+        emisor=cfdi40.Emisor(
+            rfc=signer.rfc,
+            nombre=signer.legal_name,
+            regimen_fiscal=RegimenFiscal.GENERAL_DE_LEY_PERSONAS_MORALES,
+        ),
+        lugar_expedicion="56820",
+
+        # --- Receptor ---
+        receptor=cfdi40.Receptor(
+            rfc='KIJ0906199R1',
+            nombre='KIJ, S.A DE C.V.',
+            uso_cfdi=UsoCFDI.GASTOS_EN_GENERAL,
+            domicilio_fiscal_receptor="59820",
+            regimen_fiscal_receptor=RegimenFiscal.GENERAL_DE_LEY_PERSONAS_MORALES,
+        ),
+
+        metodo_pago=MetodoPago.PAGO_EN_PARCIALIDADES_O_DIFERIDO,
+        serie="A",
+        folio="123456",
+
+        # --- Conceptos ---
+        conceptos=[
+            cfdi40.Concepto(
+                clave_prod_serv='84111506',
+                cantidad=Decimal('1.00'),
+                clave_unidad='E48',
+                descripcion='SERVICIOS DE FACTURACION',
+                valor_unitario=Decimal('1250.30'),
+                impuestos=cfdi40.Impuestos(
+                    traslados=cfdi40.Traslado(
+                        impuesto=Impuesto.IVA,
+                        tipo_factor=TipoFactor.TASA,
+                        tasa_o_cuota=Decimal('0.160000'),
+                    ),
+                    retenciones=[
+                        cfdi40.Retencion(
+                            impuesto=Impuesto.ISR,
+                            tipo_factor=TipoFactor.TASA,
+                            tasa_o_cuota=Decimal('0.100000'),
+                        ),
+                        cfdi40.Retencion(
+                            impuesto=Impuesto.IVA,
+                            tipo_factor=TipoFactor.TASA,
+                            tasa_o_cuota=Decimal('0.106667'),
+                        ),
+                    ],
+                ),
+            )
+        ],
+    )
     ```
+
+    <Tip>
+      The `catalogos` module contains all SAT-catalogue enumerations (`RegimenFiscal`, `UsoCFDI`, `MetodoPago`, `Impuesto`, `TipoFactor`, and more). Using the enum members instead of raw strings prevents typos and makes your code self-documenting.
+    </Tip>
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
 
-    ```bash
-    your-cli start
+  <Step title="Sign and export">
+    Call `invoice.sign(signer)` to compute the `cadena_original`, sign it with SHA-256 using the CSD private key, and embed the `NoCertificado`, `Certificado`, and `Sello` attributes. Then call `invoice.process()` to re-parse the signed XML into a final `CFDI` object ready for export.
+
+    ```python
+    from satcfdi import render
+
+    # Sign the invoice
+    invoice.sign(signer)
+
+    # Re-parse into a validated CFDI object
+    invoice = invoice.process()
+
+    # Export to XML
+    invoice.xml_write("my_invoice.xml")
+
+    # Export to PDF (requires WeasyPrint system dependencies)
+    render.pdf_write(invoice, "my_invoice.pdf")
+
+    # Export to HTML
+    render.html_write(invoice, "my_invoice.html")
+
+    # Export to JSON
+    render.json_write(invoice, "my_invoice.json", pretty_print=True)
     ```
+
+    <Note>
+      At this point the CFDI is **signed** but **not yet stamped** (timbrado). To obtain the UUID and `TimbreFiscalDigital` complement you must send the signed XML to a PAC. See the PAC integration documentation for details.
+    </Note>
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## Load an Existing CFDI from File or Bytes
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+If you already have a CFDI XML — for example one downloaded from the SAT portal or received from a supplier — load it with `CFDI.from_file()` or `CFDI.from_string()`:
+
+```python
+from satcfdi.cfdi import CFDI
+
+# Load from a file path
+invoice = CFDI.from_file('comprobante.xml')
+
+# Load from bytes (e.g. from a database BLOB or HTTP response body)
+invoice = CFDI.from_string(open('comprobante.xml', 'rb').read())
+```
+
+Once loaded, the same export methods are available:
+
+```python
+from satcfdi import render
+
+# Get the raw bytes without writing to disk
+xml_bytes = invoice.xml_bytes()
+
+# Render to PDF
+render.pdf_write(invoice, "comprobante.pdf")
+
+# Get HTML as a string (useful for embedding in a web response)
+html = render.html_str(invoice)
+```
+
+## Convert XML to PDF Using the CLI
+
+python-satcfdi installs a `satcfdi` command-line tool. You can convert any CFDI XML to PDF (or HTML / JSON) without writing a single line of Python:
+
+```bash
+# Convert a single file — produces invoice.pdf next to invoice.xml
+satcfdi pdf invoice.xml
+
+# Convert all XML files in the current directory
+satcfdi pdf "*.xml"
+
+# Convert to HTML
+satcfdi html invoice.xml
+
+# Convert to JSON (pretty-printed)
+satcfdi json invoice.xml
+```
+
+The CLI reads the XML with `CFDI.from_file()`, renders it with `render.pdf_write()` / `render.html_write()` / `render.json_write()`, and writes the output file alongside the original, replacing the `.xml` extension.
+
+## Next Steps
+
+<Note>
+  This quickstart covers the most common case — a simple Ingreso CFDI. For Nómina, Pagos, Traslados, Retenciones, and Contabilidad Electrónica documents, as well as PAC timbrado and SAT service integrations, see the **CFDI / Create Comprobante** section of the documentation.
+</Note>

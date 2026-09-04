@@ -1,0 +1,135 @@
+---
+title: "Download Constancia de Situación Fiscal"
+sidebarTitle: "Constancia Fiscal"
+description: "Retrieve a taxpayer's Constancia de Situación Fiscal from SAT using csf.retrieve() with RFC and ID CIF, or download the PDF via SATPortalConstancia with FIEL authentication."
+---
+
+The **Constancia de Situación Fiscal** is an official SAT document that shows a taxpayer's current registration status, including their RFC, fiscal regime(s), and tax obligations. `python-satcfdi` provides two ways to access it: a lightweight JSON retrieval that requires no authentication, and a PDF download that authenticates through SAT's portal using your FIEL.
+
+## Simple JSON Retrieval
+
+`csf.retrieve(rfc, id_cif)` fetches and parses the constancia page directly from SAT's QR-based validator. It requires the taxpayer's RFC and their **ID CIF** (the numeric identifier printed on the constancia document itself). No credentials are needed.
+
+```python
+from satcfdi import csf
+
+res = csf.retrieve("AAA010101AAA", id_cif="012345678")
+print(res)
+```
+
+The returned dictionary follows this structure:
+
+```python
+{
+    "RFC": "AAA010101AAA",
+    "Nombre / Razón Social": "...",
+    "Regimenes": [
+        {
+            "RegimenFiscal": Code("601", "General de Ley Personas Morales"),
+            "Fecha de alta": datetime.date(2010, 1, 1)
+        },
+        # ... additional regimes
+    ],
+    # ... other fields parsed from the constancia HTML
+}
+```
+
+<Note>
+  `csf.retrieve()` does **not** require any SAT credentials. It reads the public QR verification page. If either `rfc` or `id_cif` is invalid, a `ValueError` is raised.
+</Note>
+
+## Generate the Verification URL
+
+You can also build the SAT verification URL directly without making an HTTP request. This is useful for embedding in documents or QR codes.
+
+```python
+from satcfdi import csf
+
+verification_url = csf.url("AAA010101AAA", id_cif="012345678")
+print(verification_url)
+# https://siat.sat.gob.mx/app/qr/faces/pages/mobile/validadorqr.jsf?D1=10&D2=1&D3=012345678_AAA010101AAA
+```
+
+## Download Constancia PDF via FIEL
+
+`SATPortalConstancia` authenticates against SAT's portal using your FIEL and downloads the official PDF of the Constancia de Situación Fiscal.
+
+<Steps>
+  <Step title="Load your FIEL">
+    Use `Signer.load()` with your FIEL certificate, private key, and password.
+  </Step>
+  <Step title="Instantiate SATPortalConstancia">
+    Pass the signer to `SATPortalConstancia`.
+  </Step>
+  <Step title="Call generar_constancia()">
+    The method handles the FIEL login flow automatically and returns the PDF as `bytes`.
+  </Step>
+  <Step title="Save the PDF">
+    Write the returned bytes to a file.
+  </Step>
+</Steps>
+
+```python
+from satcfdi.models import Signer
+from satcfdi.portal import SATPortalConstancia
+
+# Load FIEL
+signer = Signer.load(
+    certificate=open('fiel/xiqb891116qe4.cer', 'rb').read(),
+    key=open('fiel/xiqb891116qe4.key', 'rb').read(),
+    password=open('fiel/xiqb891116qe4.txt', 'r').read()
+)
+
+sp = SATPortalConstancia(signer)
+
+res = sp.generar_constancia()
+with open('constancia.pdf', 'wb') as f:
+    f.write(res)
+```
+
+<Warning>
+  `SATPortalConstancia` requires a valid **FIEL** (e-firma), not a CSD. Passing a CSD signer will result in an authentication error on SAT's portal.
+</Warning>
+
+## Download Opinión de Cumplimiento (32-D)
+
+`SATPortalOpinionCumplimiento` downloads the official **Opinión de Cumplimiento** (also known as the 32-D report), which certifies whether a taxpayer is current on their tax obligations. It follows the same FIEL-based authentication pattern.
+
+```python
+from satcfdi.models import Signer
+from satcfdi.portal import SATPortalOpinionCumplimiento
+
+# Load FIEL
+signer = Signer.load(
+    certificate=open('fiel/xiqb891116qe4.cer', 'rb').read(),
+    key=open('fiel/xiqb891116qe4.key', 'rb').read(),
+    password=open('fiel/xiqb891116qe4.txt', 'r').read()
+)
+
+sp = SATPortalOpinionCumplimiento(signer)
+
+res = sp.generar_opinion_cumplimiento()
+with open('opinion_de_cumplimiento.pdf', 'wb') as f:
+    f.write(res)
+```
+
+<Note>
+  `generar_opinion_cumplimiento()` returns `bytes` containing the PDF content of the Opinión de Cumplimiento (32-D). The method internally handles the multi-step FIEL + OAuth2 + SAML flow required by SAT's portal.
+</Note>
+
+## Summary
+
+<CardGroup cols={2}>
+  <Card title="csf.retrieve()" icon="database">
+    Returns parsed JSON data from the constancia. No authentication required. Needs RFC + ID CIF.
+  </Card>
+  <Card title="csf.url()" icon="link">
+    Builds the SAT QR verification URL without making any HTTP request.
+  </Card>
+  <Card title="SATPortalConstancia" icon="file-pdf">
+    Downloads the official Constancia PDF. Requires FIEL authentication.
+  </Card>
+  <Card title="SATPortalOpinionCumplimiento" icon="circle-check">
+    Downloads the 32-D Opinión de Cumplimiento PDF. Requires FIEL authentication.
+  </Card>
+</CardGroup>

@@ -1,0 +1,214 @@
+---
+title: "Load and Export CFDI Documents"
+sidebarTitle: "Load & Export"
+description: "Load existing CFDI XML from file or bytes with CFDI.from_file() and CFDI.from_string(), then export to XML, JSON, HTML, and PDF."
+---
+
+The `CFDI` class is the central Python object for working with stamped Mexican electronic invoices. It wraps an XML document as a dict-like structure, giving you typed access to every node and attribute while also providing serialization helpers for every common output format. Whether you receive a CFDI from a PAC, a supplier, or your own signing flow, you always start by loading it into a `CFDI` instance.
+
+## Loading a CFDI
+
+### From a file
+
+Pass the path to any `.xml` file that contains a valid CFDI comprobante or retención:
+
+```python
+from satcfdi.cfdi import CFDI
+
+invoice = CFDI.from_file("comprobante.xml")
+```
+
+`from_file` parses the XML, validates the namespace against the known SAT schemas, and returns a fully hydrated `CFDI` object.
+
+### From bytes or a string
+
+If you already have the raw XML in memory (e.g. received over an API), use `from_string`:
+
+```python
+from satcfdi.cfdi import CFDI
+
+# from bytes read from disk
+with open("comprobante.xml", "rb") as f:
+    invoice = CFDI.from_string(f.read())
+
+# from bytes received from a web service
+invoice = CFDI.from_string(response.content)
+```
+
+`from_string` accepts a `bytes` value containing UTF-8 encoded XML — the same format returned by PAC stamping endpoints.
+
+## Accessing CFDI Properties
+
+A loaded `CFDI` behaves like a nested dictionary. Standard CFDI nodes are accessible by their XML element name:
+
+```python
+# Top-level scalar attributes
+print(invoice["Version"])          # "4.0"
+print(invoice["Total"])            # Decimal('1450.35')
+print(invoice["Fecha"])            # datetime(...)
+
+# Emisor / Receptor sub-nodes
+emisor   = invoice["Emisor"]
+receptor = invoice["Receptor"]
+print(emisor["Rfc"])               # "XIQB891116QE4"
+print(receptor["Nombre"])          # "KIJ, S.A DE C.V."
+
+# Complemento (TimbreFiscalDigital lives here after stamping)
+tfd = invoice["Complemento"]["TimbreFiscalDigital"]
+print(tfd["UUID"])                 # "d6042dc8-d525-..."
+print(tfd["NoCertificadoSAT"])
+```
+
+### `verifica_url`
+
+Build the SAT verification URL for any stamped CFDI or retención:
+
+```python
+url = invoice.verifica_url
+# https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=...&re=...
+```
+
+### `cadena_original`
+
+Reproduce the canonical string used for digital-signature verification:
+
+```python
+cadena = invoice.cadena_original()
+print(cadena[:80])   # ||4.0|2020-01-30T...
+```
+
+## Exporting
+
+The library supports four output formats. XML methods live directly on the `CFDI` object; JSON, HTML, and PDF helpers are in the `satcfdi.render` module.
+
+### XML
+
+<CodeGroup>
+```python To bytes
+xml_bytes = invoice.xml_bytes()
+
+# Pretty-printed with XML declaration
+xml_bytes = invoice.xml_bytes(pretty_print=True, xml_declaration=True)
+```
+
+```python To file path
+invoice.xml_write("output/comprobante.xml")
+
+# Include xsi:schemaLocation attributes
+invoice.xml_write("output/comprobante.xml", include_schema_location=True)
+```
+</CodeGroup>
+
+### JSON
+
+<CodeGroup>
+```python To string
+from satcfdi import render
+
+json_str = render.json_str(invoice)
+
+# Pretty-printed
+json_str = render.json_str(invoice, pretty_print=True)
+```
+
+```python To file path
+render.json_write(invoice, "output/comprobante.json")
+render.json_write(invoice, "output/comprobante.json", pretty_print=True)
+```
+</CodeGroup>
+
+### HTML
+
+<CodeGroup>
+```python To string
+from satcfdi import render
+
+html = render.html_str(invoice)
+```
+
+```python To file path
+render.html_write(invoice, "output/comprobante.html")
+```
+</CodeGroup>
+
+### PDF
+
+<Note>
+PDF generation requires [WeasyPrint](https://weasyprint.org/) to be installed: `pip install weasyprint`. If WeasyPrint is not installed, `pdf_bytes` and `pdf_write` raise `ImportError`.
+</Note>
+
+<CodeGroup>
+```python To bytes
+from satcfdi import render
+
+pdf_bytes = render.pdf_bytes(invoice)
+```
+
+```python To file path
+render.pdf_write(invoice, "output/comprobante.pdf")
+```
+</CodeGroup>
+
+## Streaming to File Objects
+
+All write methods accept an open file handle in addition to a file-path string. This is useful when you need to stream output into an existing buffer, HTTP response, or ZIP archive:
+
+```python
+from satcfdi import render
+
+# XML — binary mode
+with open("comprobante.xml", "wb") as f:
+    invoice.xml_write(f)
+
+# JSON — text mode, UTF-8
+with open("comprobante.json", "w", encoding="utf-8") as f:
+    render.json_write(invoice, f)
+
+# HTML — text mode, UTF-8
+with open("comprobante.html", "w", encoding="utf-8") as f:
+    render.html_write(invoice, f)
+
+# PDF — binary mode
+with open("comprobante.pdf", "wb") as f:
+    render.pdf_write(invoice, f)
+```
+
+## Multiple Documents in One Output
+
+`html_write`, `html_str`, `pdf_write`, and `pdf_bytes` all accept a **list** of `CFDI` objects. This is the recommended way to generate a single HTML or PDF file that contains several invoices:
+
+```python
+from satcfdi import render
+from satcfdi.cfdi import CFDI
+
+invoice1 = CFDI.from_file("factura_001.xml")
+invoice2 = CFDI.from_file("factura_002.xml")
+
+# Single HTML with both invoices
+render.html_write([invoice1, invoice2], "batch.html")
+
+# Single PDF with both invoices
+render.pdf_write([invoice1, invoice2], "batch.pdf")
+
+# Or capture as strings/bytes
+html = render.html_str([invoice1, invoice2])
+pdf  = render.pdf_bytes([invoice1, invoice2])
+```
+
+## Embedding HTML Body Only
+
+By default `html_write` and `html_str` use `MAIN_TEMPLATE`, which produces a complete `<html>` document. If you need to embed the invoice body into an existing page, import and pass `BODY_TEMPLATE` instead:
+
+```python
+from satcfdi import render
+from satcfdi.render import BODY_TEMPLATE
+
+# Returns only the inner <body> fragment — no <html>/<head> wrapper
+body_html = render.html_str(invoice, template=BODY_TEMPLATE)
+
+render.html_write(invoice, "fragment.html", template=BODY_TEMPLATE)
+```
+
+<Tip>
+`BODY_TEMPLATE` is ideal when you already control the surrounding page structure and just want to inject the SAT-standard invoice layout as a component.
+</Tip>

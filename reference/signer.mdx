@@ -1,0 +1,262 @@
+---
+title: "Signer: CSD and FIEL Certificate Management"
+sidebarTitle: "Signer"
+description: "Reference for the Signer class — load CSD or FIEL certificates from DER files or PKCS#12, sign cadena original with SHA-256, and export key material."
+---
+
+The `Signer` class is the central cryptographic primitive in python-satcfdi. It pairs a DER-encoded X.509 certificate (`.cer`) with its corresponding RSA private key (`.key`) and exposes the signing operations required to stamp CFDI comprobantes or authenticate with SAT web services. `Signer` extends `Certificate`, so every property available on a certificate — RFC, legal name, certificate number — is also available directly on a signer instance.
+
+## Class hierarchy
+
+`Signer` inherits from `Certificate`. `Certificate` wraps an OpenSSL `X509` object and provides read-only access to the subject fields extracted from the certificate's Distinguished Name. `Signer` adds the private key and all signing methods.
+
+```python
+from satcfdi.models import Signer, Certificate
+
+# Signer IS-A Certificate
+isinstance(signer, Certificate)  # True
+```
+
+<Note>
+  Two certificate types are recognised automatically via `Certificate.type`: `CertificateType.CSD` (2 X.509 extensions) for stamping comprobantes, and `CertificateType.Fiel` (4 extensions) for SAT web services such as Descarga Masiva, Certifica, and Portal de Facturación.
+</Note>
+
+---
+
+## `Signer.load()`
+
+Load a `Signer` from raw DER-encoded bytes — the standard format produced by SAT when you download a CSD or FIEL.
+
+```python
+@classmethod
+def load(
+    cls,
+    certificate: bytes,
+    key: bytes,
+    password: str | bytes = None,
+    check: bool = True,
+) -> "Signer": ...
+```
+
+<ParamField path="certificate" type="bytes" required>
+  DER-encoded certificate bytes. Read the `.cer` file in binary mode:
+  `certificate = open("MiCertificado.cer", "rb").read()`.
+</ParamField>
+
+<ParamField path="key" type="bytes" required>
+  DER-encoded private key bytes, typically an encrypted `.key` file from SAT.
+  Read in binary mode: `key = open("MiLlave.key", "rb").read()`.
+</ParamField>
+
+<ParamField path="password" type="str | bytes" default="None">
+  Password used to decrypt the private key. Accepts either a `str` (UTF-8
+  encoded internally) or raw `bytes`. Pass `None` if the key is unencrypted.
+</ParamField>
+
+<ParamField path="check" type="bool" default="True">
+  When `True` (default), verifies that the private key's public component
+  matches the certificate's public key. Raises `CFDIError` on mismatch.
+  Set to `False` only when you are certain both files belong together and
+  want to skip the verification step.
+</ParamField>
+
+**Example**
+
+```python
+from satcfdi.models import Signer
+
+certificate = open("my_certificate.cer", "rb").read()
+key         = open("my_key.key", "rb").read()
+
+signer = Signer.load(certificate, key, password="my_password")
+print(signer.rfc)             # e.g. RFC("XAXX010101000")
+print(signer.certificate_number)  # 20-digit hex certificate serial
+```
+
+---
+
+## `Signer.load_pkcs12()`
+
+Load a `Signer` from a PKCS#12 bundle (`.p12` / `.pfx`). PKCS#12 files already bind the certificate and private key together, so the key-match check is skipped automatically.
+
+```python
+@classmethod
+def load_pkcs12(
+    cls,
+    data: bytes,
+    password: str | bytes = None,
+) -> "Signer": ...
+```
+
+<ParamField path="data" type="bytes" required>
+  Raw PKCS#12 file bytes: `data = open("bundle.p12", "rb").read()`.
+</ParamField>
+
+<ParamField path="password" type="str | bytes" default="None">
+  Password protecting the PKCS#12 bundle. Accepts `str` or `bytes`.
+</ParamField>
+
+**Example**
+
+```python
+from satcfdi.models import Signer
+
+data   = open("bundle.p12", "rb").read()
+signer = Signer.load_pkcs12(data, password="secret")
+```
+
+---
+
+## Properties inherited from `Certificate`
+
+Because `Signer` extends `Certificate`, all of the following properties are available on every `Signer` instance.
+
+<ResponseField name="rfc" type="RFC | None">
+  The RFC extracted from the certificate's `x500UniqueIdentifier` subject
+  field. Returns a typed `RFC` object (subclass of `str`).
+</ResponseField>
+
+<ResponseField name="legal_name" type="str | None">
+  The organisation name (`O`) from the certificate subject. For moral persons,
+  the corporate suffix (e.g. `SA DE CV`) is stripped automatically.
+</ResponseField>
+
+<ResponseField name="certificate_number" type="str">
+  The 20-character hexadecimal certificate serial number as displayed in
+  CFDI XML (odd bytes of the raw serial number).
+</ResponseField>
+
+<ResponseField name="certificate_base64()" type="str">
+  Returns the DER-encoded certificate as a Base64 string, ready to embed
+  directly into the `<cfdi:Comprobante NoCertificado="..." Certificado="..."/>`
+  attribute.
+</ResponseField>
+
+<ResponseField name="type" type="CertificateType | None">
+  `CertificateType.CSD` or `CertificateType.Fiel`, detected from the number
+  of X.509 extensions in the certificate.
+</ResponseField>
+
+<ResponseField name="curp" type="CURP | None">
+  CURP of the certificate holder (physical persons only), from the `serialNumber`
+  subject field.
+</ResponseField>
+
+<ResponseField name="email" type="str | None">
+  Email address from the certificate subject, if present.
+</ResponseField>
+
+---
+
+## Signing methods
+
+Both methods apply PKCS#1 v1.5 padding and return the signature as a Base64-encoded string, which is what the CFDI specification requires for the `Sello` attribute.
+
+### `sign_sha256(data)`
+
+Signs `data` with **SHA-256** — required for CFDI 4.0 and all current SAT services.
+
+```python
+def sign_sha256(self, data: bytes) -> str: ...
+```
+
+```python
+cadena = b"|4.0|...|"          # cadena original bytes
+sello  = signer.sign_sha256(cadena)
+print(sello)                   # Base64-encoded SHA-256 signature string
+```
+
+### `sign_sha1(data)`
+
+Signs `data` with **SHA-1**. Provided for legacy CFDI 3.3 support and certain older SAT web service endpoints that still require SHA-1 signatures.
+
+```python
+def sign_sha1(self, data: bytes) -> str: ...
+```
+
+<Warning>
+  SHA-1 is cryptographically weak. Use `sign_sha256` for all new development
+  and for CFDI 4.0 documents.
+</Warning>
+
+---
+
+## Key export
+
+### `key_bytes(password, encoding)`
+
+Serialises the private key back to bytes, optionally re-encrypting with a new password.
+
+```python
+def key_bytes(
+    self,
+    password: str | bytes = None,
+    encoding: Encoding = Encoding.DER,
+) -> bytes: ...
+```
+
+<ParamField path="password" type="str | bytes" default="None">
+  Password to encrypt the exported key. Uses `BestAvailableEncryption`
+  (AES-256-CBC) when provided, or `NoEncryption` when `None`.
+</ParamField>
+
+<ParamField path="encoding" type="cryptography.hazmat.primitives.serialization.Encoding" default="Encoding.DER">
+  Serialisation format. Use `Encoding.DER` (binary, default) or `Encoding.PEM`
+  (ASCII armoured). Import from
+  `cryptography.hazmat.primitives.serialization`.
+</ParamField>
+
+```python
+from cryptography.hazmat.primitives.serialization import Encoding
+
+# Export PEM-encoded, password-protected key
+pem_key = signer.key_bytes(password="new_password", encoding=Encoding.PEM)
+with open("exported_key.pem", "wb") as f:
+    f.write(pem_key)
+```
+
+### `pcks12_bytes(password)`
+
+Bundles the certificate and private key into a PKCS#12 file.
+
+```python
+def pcks12_bytes(self, password: str | bytes = None) -> bytes: ...
+```
+
+```python
+p12 = signer.pcks12_bytes(password="export_password")
+with open("bundle.p12", "wb") as f:
+    f.write(p12)
+```
+
+---
+
+## CSD vs FIEL
+
+<CardGroup cols={2}>
+  <Card title="CSD — Certificado de Sello Digital" icon="stamp">
+    Used exclusively to **stamp (sellar) CFDI comprobantes**. One CSD is issued
+    per branch (`sucursal`). The `rfc_pac` property identifies the PAC that
+    issued the stamp. Load with `Signer.load()` using the `.cer` and `.key`
+    files downloaded from the SAT portal.
+  </Card>
+  <Card title="FIEL — Firma Electrónica Avanzada" icon="shield-check">
+    The taxpayer's identity credential. Used to authenticate with **SAT web
+    services** — Descarga Masiva (bulk download), Certifica (CSD renewal), and
+    Portal de Facturación. Identified by `CertificateType.Fiel`. Load the same
+    way as CSD; the library detects the type automatically from X.509
+    extensions.
+  </Card>
+</CardGroup>
+
+```python
+from satcfdi.models import Signer
+from satcfdi.models.certificate import CertificateType
+
+signer = Signer.load(cert_bytes, key_bytes, password="pass")
+
+if signer.type == CertificateType.Fiel:
+    print("This is a FIEL — use for SAT web services")
+elif signer.type == CertificateType.CSD:
+    print("This is a CSD — use for stamping comprobantes")
+```

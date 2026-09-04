@@ -1,0 +1,125 @@
+---
+title: "Request and Renew CSD Certificates with Certifica"
+sidebarTitle: "Certifica"
+description: "Use the Certifica class to request new CSD (Certificado de Sello Digital) certificates and renew your FIEL directly through SAT's Certifica service with FIEL authentication."
+---
+
+The `Certifica` class allows you to programmatically generate and submit certificate requests to SAT's Certifica service. You can request new **CSD** (Certificado de Sello Digital) certificates for issuing electronic invoices, as well as renew your existing **FIEL** (e-firma) — all without visiting the SAT portal manually.
+
+## Prerequisites
+
+A valid **FIEL** is always required. The `Certifica` constructor enforces this: passing a CSD signer instead of a FIEL will immediately raise a `ValueError`.
+
+```python
+from satcfdi.models import Signer
+from satcfdi.certifica import Certifica
+
+# Load your FIEL
+fiel = Signer.load(
+    certificate=open('fiel/xiqb891116qe4.cer', 'rb').read(),
+    key=open('fiel/xiqb891116qe4.key', 'rb').read(),
+    password=open('fiel/xiqb891116qe4.txt', 'r').read()
+)
+
+certifica = Certifica(fiel)
+```
+
+<Warning>
+  `Certifica` validates that the signer is a FIEL on construction. If you pass a CSD, you will receive: `ValueError: 'signer' no es Fiel`.
+</Warning>
+
+## Request a New CSD
+
+`solicitud_certificado(sucursal, password, dirname)` generates a new RSA key pair, creates a certificate signing request (CSR), packages it as a PKCS#7 signed file, and writes the resulting files to disk.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `sucursal` | `str` | Branch/office name to embed in the certificate subject (e.g. `"Matriz"`, `"Sucursal 1"`). |
+| `password` | `str` | Password to protect the generated private key file. |
+| `dirname` | `str \| None` | Directory where output files are saved. `None` saves to the current working directory. The directory is created automatically if it does not exist. |
+
+```python
+from satcfdi.models import Signer
+from satcfdi.certifica import Certifica
+
+fiel = Signer.load(
+    certificate=open('fiel/xiqb891116qe4.cer', 'rb').read(),
+    key=open('fiel/xiqb891116qe4.key', 'rb').read(),
+    password=open('fiel/xiqb891116qe4.txt', 'r').read()
+)
+
+certifica = Certifica(fiel)
+
+certifica.solicitud_certificado(
+    sucursal="MiSucursal",
+    password="IsTHisSecure!32?",
+    dirname=None  # saves in the current directory
+)
+```
+
+<Steps>
+  <Step title="Key pair generated">
+    A 2048-bit RSA private key is generated and saved as `CSD_<sucursal>_<RFC>_<timestamp>.key` (encrypted with your chosen password).
+  </Step>
+  <Step title="CSR created">
+    A certificate signing request is built from the key and the RFC information embedded in your FIEL.
+  </Step>
+  <Step title="PKCS#7 package written">
+    The CSR is packaged as a PKCS#7 signed message using your FIEL and saved as `CSD_<RFC>_<timestamp>.sdg`.
+  </Step>
+  <Step title="Submit to SAT">
+    Upload the `.sdg` file through SAT's Certifica portal (https://www.sat.gob.mx/tramites/16703/obten-tu-certificado-de-sello-digital) to receive the `.cer` certificate.
+  </Step>
+</Steps>
+
+<Note>
+  The `.sdg` file is the package you upload to SAT's Certifica portal. SAT processes it and issues the actual `.cer` certificate, which you then download from the portal.
+</Note>
+
+## Renew Your FIEL
+
+In addition to requesting CSDs, `Certifica` supports FIEL renewal workflows.
+
+### Renew FIEL (Persona Física)
+
+`renovacion_fiel(password, correo, dirname)` generates a renewal request for the FIEL currently loaded in the signer.
+
+```python
+certifica.renovacion_fiel(
+    password="NewKeyPassword!99",
+    correo="mi@correo.com",
+    dirname="output/"
+)
+```
+
+This generates:
+- `Claveprivada_FIEL_<RFC>_<timestamp>.key` — new encrypted private key
+- `Renovacion_FIEL_<RFC>_<timestamp>.ren` — PKCS#7 renewal request
+
+### Renew FIEL (Persona Moral)
+
+`renovacion_fiel_moral(password, rfc, correo, dirname)` creates a renewal for a moral-person RFC using the representative's FIEL.
+
+```python
+certifica.renovacion_fiel_moral(
+    password="NewKeyPassword!99",
+    rfc="OÑO120726RX3",
+    correo="representante@empresa.com",
+    dirname="output/"
+)
+```
+
+<Note>
+  `renovacion_fiel_moral` validates that the provided `rfc` is a **Persona Moral** RFC. Passing a Persona Física RFC raises a `ValueError`.
+</Note>
+
+## Output Files Summary
+
+<CardGroup cols={2}>
+  <Card title=".key file" icon="lock">
+    Encrypted RSA private key (DER format, PKCS#8). Keep this file secure — it is required to use the certificate once issued.
+  </Card>
+  <Card title=".sdg / .ren file" icon="file-export">
+    PKCS#7 signed package to upload to SAT's Certifica portal. This is what SAT validates to issue or renew your certificate.
+  </Card>
+</CardGroup>

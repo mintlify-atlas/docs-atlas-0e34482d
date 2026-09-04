@@ -1,0 +1,175 @@
+---
+title: "Cancel CFDI and Retenciones via PAC or SAT"
+sidebarTitle: "Cancellation"
+description: "Cancel CFDI 4.0 and Retenciones documents using PAC.cancel() with a CancelReason, handle accept/reject workflows, and check pending cancellations."
+---
+
+Under SAT's cancellation framework, a stamped CFDI or Retención can only be cancelled through an Authorised Certification Provider (PAC) using a digitally signed cancellation request. From January 2022 onward, all cancellation requests must specify a **motivo** (reason code). Some cancellations are immediate; others — particularly when the receptor has already deducted the invoice — require the receptor to explicitly accept the cancellation before it takes effect.
+
+## Cancel Reasons
+
+The `CancelReason` enum in `satcfdi.pacs` encapsulates the four SAT-defined cancellation reason codes:
+
+| Enum value | Code | Description |
+|---|---|---|
+| `COMPROBANTE_EMITIDO_CON_ERRORES_CON_RELACION` | `01` | **Comprobante emitido con errores con relación** — The invoice contains an error and has already been re-issued. The UUID of the replacement CFDI must be provided as `substitution_id`. |
+| `COMPROBANTE_EMITIDO_CON_ERRORES_SIN_RELACION` | `02` | **Comprobante emitido con errores sin relación** — The invoice contains an error but no replacement CFDI was issued. No substitution UUID is required. |
+| `NO_SE_LLEVO_A_CABO_LA_OPERACION` | `03` | **No se llevó a cabo la operación** — The underlying commercial transaction did not take place. |
+| `OPERACION_NORMATIVA_RELACIONADA_EN_LA_FACTURA_GLOBAL` | `04` | **Operación nominativa relacionada en la factura global** — The sale was already recorded in a global invoice and a nominative invoice was subsequently requested, requiring cancellation of the global entry. |
+
+```python
+from satcfdi.pacs import CancelReason
+
+# Access the underlying SAT code string
+print(CancelReason.COMPROBANTE_EMITIDO_CON_ERRORES_CON_RELACION.value)  # "01"
+print(CancelReason.NO_SE_LLEVO_A_CABO_LA_OPERACION.value)               # "03"
+```
+
+<Warning>
+**Motivo 01 always requires a `substitution_id`.** Pass the UUID string of the replacement CFDI. If you omit it, the PAC will reject the request. If no replacement exists, use motivo `02` instead.
+</Warning>
+
+## Cancel a CFDI via PAC
+
+The simplest cancellation path is `pac.cancel()`. Pass the loaded `CFDI` object, the reason, and — for motivo 01 — the substitution UUID:
+
+```python
+from satcfdi.cfdi import CFDI
+from satcfdi.pacs import CancelReason
+
+# Load the invoice you want to cancel
+invoice = CFDI.from_file("factura_A123456.xml")
+
+# Motivo 02 — error with no replacement
+ack = pac.cancel(
+    cfdi=invoice,
+    reason=CancelReason.COMPROBANTE_EMITIDO_CON_ERRORES_SIN_RELACION,
+    signer=signer,
+)
+print(ack.code)    # SAT response code, e.g. "201" = cancelled
+print(ack.acuse)   # bytes of the XML acuse de cancelación
+```
+
+### Motivo 01 — with a replacement CFDI
+
+```python
+ack = pac.cancel(
+    cfdi=original_invoice,
+    reason=CancelReason.COMPROBANTE_EMITIDO_CON_ERRORES_CON_RELACION,
+    substitution_id="d6042dc8-d525-4e78-8d1b-092c878bd518",  # UUID of the new invoice
+    signer=signer,
+)
+```
+
+### Motivo 03 — operation did not take place
+
+```python
+ack = pac.cancel(
+    cfdi=invoice,
+    reason=CancelReason.NO_SE_LLEVO_A_CABO_LA_OPERACION,
+    signer=signer,
+)
+```
+
+The returned `CancelationAcknowledgment` object has two fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `code` | `str \| dict` | SAT response code. Common values: `"201"` (cancelled), `"202"` (previously cancelled), `"205"` (pending receptor acceptance). |
+| `acuse` | `bytes` | Raw XML of the SAT acuse de cancelación, when available. |
+
+## Cancel Using Raw Cancelación Objects
+
+For advanced scenarios — such as cancelling multiple UUIDs in a single request or building the signature envelope manually — you can construct `cancelacion.Cancelacion` and `cancelacionretencion.Cancelacion` directly and pass them to the corresponding PAC methods:
+
+### Cancel a CFDI comprobante
+
+```python
+from satcfdi.create.cancela.cancelacion import Cancelacion, Folio
+from satcfdi.pacs import CancelReason
+
+cancelacion = Cancelacion(
+    emisor=signer,
+    folios=[
+        Folio(
+            uuid="d6042dc8-d525-4e78-8d1b-092c878bd518",
+            motivo=CancelReason.COMPROBANTE_EMITIDO_CON_ERRORES_SIN_RELACION.value,
+        ),
+        Folio(
+            uuid="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            motivo=CancelReason.NO_SE_LLEVO_A_CABO_LA_OPERACION.value,
+        ),
+    ],
+)
+
+ack = pac.cancel_comprobante(cancelacion)
+```
+
+### Cancel a Retención
+
+```python
+from satcfdi.create.cancela.cancelacionretencion import Cancelacion as CancelacionRetencion, Folio
+
+cancelacion_ret = CancelacionRetencion(
+    emisor=signer,
+    folios=Folio(
+        uuid="f0e1d2c3-b4a5-6789-cdef-012345678901",
+        motivo=CancelReason.COMPROBANTE_EMITIDO_CON_ERRORES_SIN_RELACION.value,
+    ),
+)
+
+ack = pac.cancel_retencion(cancelacion_ret)
+```
+
+## Accept or Reject a Cancellation Request
+
+When a receptor receives a cancellation request for an invoice they have already deducted, SAT requires them to explicitly accept or reject it. Use `pac.accept_reject()` with a `SolicitudAceptacionRechazo`:
+
+```python
+from satcfdi.create.cancela.aceptacionrechazo import SolicitudAceptacionRechazo, Folios
+
+solicitud = SolicitudAceptacionRechazo(
+    rfc_receptor=receptor_signer,
+    rfc_pac_envia_solicitud=pac.RFC,
+    folios=[
+        Folios(
+            respuesta="Aceptacion",
+            uuid="d6042dc8-d525-4e78-8d1b-092c878bd518",
+        ),
+        Folios(
+            respuesta="Rechazo",
+            uuid="a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        ),
+    ],
+)
+
+ack = pac.accept_reject(solicitud)
+print(ack.folios)   # dict mapping UUID → SAT response code
+print(ack.acuse)    # bytes of the XML acuse de aceptación/rechazo
+```
+
+`Folios.respuesta` must be exactly `"Aceptacion"` or `"Rechazo"` — any other value raises `ValueError`.
+
+The returned `AcceptRejectAcknowledgment` has:
+
+| Field | Type | Description |
+|---|---|---|
+| `folios` | `dict` | Per-UUID SAT response codes |
+| `acuse` | `bytes` | Raw XML acuse |
+
+## Check Pending Cancellations
+
+To retrieve a list of CFDI UUIDs that are awaiting receptor acceptance (i.e. cancellations in `"205"` status), call `pac.pending()`:
+
+```python
+pending_uuids = pac.pending(rfc="XIQB891116QE4")
+
+for uuid in pending_uuids:
+    print(uuid)
+```
+
+The method returns a `list[str]` of UUID strings. An empty list means no cancellations are currently pending acceptance for that RFC.
+
+<Note>
+`PAC` is an abstract base class. You must use a concrete PAC implementation (e.g. `satcfdi.pacs.sw` or another registered provider) that implements all the methods shown above. The signatures and return types documented here are guaranteed by the base class interface.
+</Note>

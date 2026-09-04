@@ -1,0 +1,128 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "python-satcfdi",
+  "projectDescription": "A Python library for generating, signing, stamping, and processing Mexican SAT CFDI electronic invoices, with support for PAC integrations, bulk download, DIOT, retenciones, contabilidad electrónica, and SAT portal services.",
+  "theme": "luma",
+  "primaryColor": "#2980b9",
+  "lightColor": "#63717a",
+  "darkColor": "#b3bcc1",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "CFDI",
+            "pages": [
+              "cfdi/load-export",
+              "cfdi/create-comprobante",
+              "cfdi/complementos",
+              "cfdi/retenciones",
+              "cfdi/cancellation"
+            ]
+          },
+          {
+            "group": "Stamping & PACs",
+            "pages": [
+              "pacs/overview",
+              "pacs/sat-direct",
+              "pacs/bulk-download"
+            ]
+          },
+          {
+            "group": "SAT Services",
+            "pages": [
+              "services/constancia-fiscal",
+              "services/portal-facturacion",
+              "services/certifica",
+              "services/diot",
+              "services/pld"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/signer",
+              "reference/render",
+              "reference/catalogs",
+              "reference/cli"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "CFDI 3.2, 3.3, 4.0 creation and parsing (Ingreso, Nómina, Pagos, Traslados, Complementos)",
+    "Retenciones 1.0 and 2.0 support",
+    "Digital signing with CSD/FIEL certificates",
+    "Integration with major PACs: Diverza, Facturama, Finkok, Prodigia, SW Sapien, Comercio Digital",
+    "Descarga Masiva (bulk download) via SAT web services",
+    "PDF, HTML, and JSON rendering of comprobantes",
+    "DIOT (Declaración Informativa de Operaciones con Terceros) generation",
+    "Contabilidad Electrónica 1.3 support",
+    "Constancia de Situación Fiscal retrieval",
+    "PLD (Prevención de Lavado de Dinero) report generation",
+    "SAT Portal: RFC validation, LCO queries, Certifica certificate requests",
+    "Listado 69B taxpayer status lookup",
+    "CLI for converting CFDI XML to PDF/HTML/JSON"
+  ],
+  "publicApiSurface": [
+    "CFDI.from_file(filename)",
+    "CFDI.from_string(data)",
+    "CFDI.sign(signer)",
+    "CFDI.process()",
+    "CFDI.xml_write(target)",
+    "CFDI.xml_bytes()",
+    "CFDI.verifica_url",
+    "CFDI.cadena_original()",
+    "Signer.load(certificate, key, password)",
+    "Signer.load_pkcs12(data, password)",
+    "render.pdf_write(cfdi, target)",
+    "render.html_write(cfdi, target)",
+    "render.json_write(cfdi, target)",
+    "render.pdf_bytes(cfdi)",
+    "render.html_str(cfdi)",
+    "cfdi40.Comprobante(...)",
+    "cfdi40.Emisor(...)",
+    "cfdi40.Receptor(...)",
+    "cfdi40.Concepto(...)",
+    "cfdi40.Impuestos(...)",
+    "nomina12.Nomina(...)",
+    "pago20.Pagos(...)",
+    "PAC.stamp(cfdi, accept)",
+    "PAC.issue(cfdi, accept)",
+    "PAC.cancel(cfdi, reason, substitution_id, signer)",
+    "PAC.status(cfdi)",
+    "PAC.list_69b(rfc)",
+    "PAC.pending(rfc)",
+    "SAT(signer)",
+    "SAT.recover_comprobante_iwait(...)",
+    "SAT.recover_comprobante_emitted_request(...)",
+    "SAT.recover_comprobante_received_request(...)",
+    "SAT.recover_comprobante_status(id_solicitud)",
+    "SAT.recover_comprobante_download(id_paquete)",
+    "csf.retrieve(rfc, id_cif)",
+    "SATPortalConstancia(signer).generar_constancia()",
+    "SATPortalOpinionCumplimiento(signer).generar_opinion_cumplimiento()",
+    "SATFacturaElectronica(signer).rfc_valid(rfc)",
+    "SATFacturaElectronica(signer).legal_name_valid(rfc, legal_name)",
+    "SATFacturaElectronica(signer).lco_details(rfc)",
+    "Certifica(fiel).solicitud_certificado(sucursal, password, dirname)",
+    "DIOT(datos_identificacion, periodo, proveedores)",
+    "DIOT.generate_package()",
+    "CancelReason.COMPROBANTE_EMITIDO_CON_ERRORES_CON_RELACION",
+    "Environment.PRODUCTION / Environment.TEST",
+    "satcfdi pdf <file.xml>",
+    "satcfdi html <file.xml>",
+    "satcfdi json <file.xml>"
+  ]
+}

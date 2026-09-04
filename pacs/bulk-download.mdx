@@ -1,0 +1,335 @@
+---
+title: "Bulk Download CFDI from SAT (Descarga Masiva)"
+sidebarTitle: "Bulk Download"
+description: "Download issued and received CFDI and Retenciones at scale using SAT's Descarga Masiva web service with the full request-verify-download flow."
+---
+
+SAT's **Descarga Masiva** (Massive Download) web service lets taxpayers programmatically retrieve large batches of their issued or received CFDI and Retenciones comprobantes as ZIP archives. Rather than downloading individual documents, you submit a date-range query, poll until the package is ready, and then download one or more ZIP files each containing the matching XML files or metadata. `python-satcfdi` wraps the complete SOAP flow in the `SAT` class.
+
+## Prerequisites
+
+<Warning>
+  Descarga Masiva requires a **FIEL** (Firma Electrónica Avanzada) certificate, **not** a CSD. The FIEL is used to sign each SOAP request to the SAT authentication service. Attempting to use a CSD will result in authentication failures.
+</Warning>
+
+Load your FIEL before constructing `SAT`:
+
+```python
+from satcfdi.models import Signer
+from satcfdi.pacs.sat import SAT
+
+signer = Signer.load(
+    certificate=open("fiel/certificate.cer", "rb").read(),
+    key=open("fiel/private.key", "rb").read(),
+    password=open("fiel/password.txt", "r").read(),
+)
+
+sat = SAT(signer=signer)
+```
+
+---
+
+## Manual Request → Verify → Download Flow
+
+The Descarga Masiva process has three distinct steps. You must store the `IdSolicitud` returned by step 1 because SAT processes requests asynchronously — the package is typically not ready immediately.
+
+<Steps>
+  <Step title="Submit the download request">
+    Call `recover_comprobante_emitted_request()` for CFDIs you issued, or `recover_comprobante_received_request()` for CFDIs you received.
+
+    ```python
+    import base64
+    from datetime import date
+    from satcfdi.pacs.sat import (
+        SAT,
+        TipoDescargaMasivaTerceros,
+        EstadoComprobante,
+        EstadoSolicitud,
+    )
+
+    # --- Emitted (issued) CFDIs ---
+    response = sat.recover_comprobante_emitted_request(
+        fecha_inicial=date(2024, 1, 1),
+        fecha_final=date(2024, 3, 31),
+        rfc_emisor=sat.signer.rfc,
+        tipo_solicitud=TipoDescargaMasivaTerceros.CFDI,
+        estado_comprobante=EstadoComprobante.VIGENTE,
+    )
+
+    id_solicitud = response["IdSolicitud"]
+    print(f"Request submitted. IdSolicitud: {id_solicitud}")
+    ```
+
+    For **received** CFDIs, swap the method and use `rfc_receptor` instead:
+
+    ```python
+    response = sat.recover_comprobante_received_request(
+        fecha_inicial=date(2024, 1, 1),
+        fecha_final=date(2024, 3, 31),
+        rfc_receptor=sat.signer.rfc,
+        tipo_solicitud=TipoDescargaMasivaTerceros.CFDI,
+        estado_comprobante=EstadoComprobante.VIGENTE,
+    )
+    id_solicitud = response["IdSolicitud"]
+    ```
+  </Step>
+
+  <Step title="Poll for status">
+    SAT processes requests in the background. Poll `recover_comprobante_status()` periodically (recommended interval: 60 seconds or more) until `EstadoSolicitud` reaches `TERMINADA`.
+
+    ```python
+    import time
+
+    while True:
+        response = sat.recover_comprobante_status(id_solicitud)
+        est = response["EstadoSolicitud"]
+
+        print(f"Status: {EstadoSolicitud(est).name}  — "
+              f"CFDIs found so far: {response['NumeroCFDIs']}")
+
+        if est == EstadoSolicitud.TERMINADA:
+            break
+        elif est in (EstadoSolicitud.ERROR,
+                     EstadoSolicitud.RECHAZADA,
+                     EstadoSolicitud.VENCIDA):
+            raise RuntimeError(
+                f"Download failed: {EstadoSolicitud(est).name} — "
+                f"{response.get('Mensaje', '')}"
+            )
+
+        time.sleep(60)
+    ```
+  </Step>
+
+  <Step title="Download the packages">
+    When the status is `TERMINADA`, the response contains a list of `IdsPaquetes`. Download each package as a base64-encoded ZIP and write it to disk.
+
+    ```python
+    for id_paquete in response["IdsPaquetes"]:
+        header, paquete_b64 = sat.recover_comprobante_download(
+            id_paquete=id_paquete
+        )
+        paquete_bytes = base64.b64decode(paquete_b64)
+
+        with open(f"{id_paquete}.zip", "wb") as f:
+            f.write(paquete_bytes)
+
+        print(f"Saved {id_paquete}.zip ({len(paquete_bytes):,} bytes)")
+    ```
+  </Step>
+</Steps>
+
+---
+
+## `TipoDescargaMasivaTerceros` Options
+
+The `tipo_solicitud` parameter controls what the ZIP package contains:
+
+| Value | Description |
+|-------|-------------|
+| `TipoDescargaMasivaTerceros.CFDI` | Full XML files for each matching comprobante |
+| `TipoDescargaMasivaTerceros.METADATA` | Lightweight metadata rows (no XML content) |
+| `TipoDescargaMasivaTerceros.PDF` | PDF representations (where available) |
+| `TipoDescargaMasivaTerceros.TXTUUIDMASIVA` | Plain-text list of UUIDs only |
+
+```python
+from satcfdi.pacs.sat import TipoDescargaMasivaTerceros
+
+# Download only metadata
+response = sat.recover_comprobante_received_request(
+    fecha_inicial=date(2024, 1, 1),
+    fecha_final=date(2024, 12, 31),
+    rfc_receptor=sat.signer.rfc,
+    tipo_solicitud=TipoDescargaMasivaTerceros.METADATA,
+    estado_comprobante=EstadoComprobante.VIGENTE,
+)
+```
+
+<Warning>
+  `EstadoComprobante.VIGENTE` is **mandatory** when `tipo_solicitud` is `CFDI`. Omitting it or using `TODOS` will cause SAT to reject the request with an error. `EstadoComprobante.TODOS` is only valid for `METADATA` requests.
+</Warning>
+
+---
+
+## `EstadoSolicitud` Reference
+
+The integer status returned in `response["EstadoSolicitud"]` maps to the `EstadoSolicitud` enum:
+
+| Value | Integer | Meaning |
+|-------|---------|---------|
+| `ACEPTADA` | `1` | SAT has accepted the request and queued it for processing |
+| `EN_PROCESO` | `2` | SAT is actively generating the package |
+| `TERMINADA` | `3` | Package(s) ready — proceed to download |
+| `ERROR` | `4` | SAT encountered an internal error processing the request |
+| `RECHAZADA` | `5` | SAT rejected the request (check `CodigoEstadoSolicitud` for the reason) |
+| `VENCIDA` | `6` | The request expired before being downloaded |
+
+```python
+from satcfdi.pacs.sat import EstadoSolicitud
+
+response = sat.recover_comprobante_status(id_solicitud)
+estado = EstadoSolicitud(response["EstadoSolicitud"])
+
+match estado:
+    case EstadoSolicitud.TERMINADA:
+        print("Ready to download!")
+    case EstadoSolicitud.EN_PROCESO | EstadoSolicitud.ACEPTADA:
+        print("Still processing — try again later.")
+    case _:
+        print(f"Request ended with: {estado.name}")
+```
+
+<Note>
+  `CodigoEstadoSolicitud` **5002** (`AGOTADO`) means the exact same combination of parameters (date range, RFC emisor, RFC receptor) has already been used the maximum number of times allowed by SAT. You must adjust your query parameters (e.g. narrow the date range) to submit a new request. This limit applies specifically to `CFDI`-type requests, not `METADATA`.
+</Note>
+
+---
+
+## Downloading Retenciones
+
+The Retenciones download mirrors the CFDI flow exactly, but uses the `recover_retencion_*` family of methods which target SAT's dedicated Retenciones endpoints.
+
+<CodeGroup>
+```python Emitted Retenciones
+import base64
+from datetime import date
+from satcfdi.pacs.sat import SAT, TipoDescargaMasivaTerceros, EstadoSolicitud
+
+# Request
+response = sat.recover_retencion_emitted_request(
+    fecha_inicial=date(2024, 1, 1),
+    fecha_final=date(2024, 12, 31),
+    rfc_emisor=sat.signer.rfc,
+    tipo_solicitud=TipoDescargaMasivaTerceros.CFDI,
+)
+id_solicitud = response["IdSolicitud"]
+
+# Verify
+response = sat.recover_retencion_status(id_solicitud)
+
+# Download
+if response["EstadoSolicitud"] == EstadoSolicitud.TERMINADA:
+    for id_paquete in response["IdsPaquetes"]:
+        header, paquete_b64 = sat.recover_retencion_download(id_paquete)
+        with open(f"{id_paquete}.zip", "wb") as f:
+            f.write(base64.b64decode(paquete_b64))
+```
+
+```python Received Retenciones
+import base64
+from datetime import date
+from satcfdi.pacs.sat import SAT, TipoDescargaMasivaTerceros, EstadoSolicitud
+
+# Request
+response = sat.recover_retencion_received_request(
+    fecha_inicial=date(2024, 1, 1),
+    fecha_final=date(2024, 12, 31),
+    rfc_receptor=sat.signer.rfc,
+    tipo_solicitud=TipoDescargaMasivaTerceros.CFDI,
+)
+id_solicitud = response["IdSolicitud"]
+
+# Verify
+response = sat.recover_retencion_status(id_solicitud)
+
+# Download
+if response["EstadoSolicitud"] == EstadoSolicitud.TERMINADA:
+    for id_paquete in response["IdsPaquetes"]:
+        header, paquete_b64 = sat.recover_retencion_download(id_paquete)
+        with open(f"{id_paquete}.zip", "wb") as f:
+            f.write(base64.b64decode(paquete_b64))
+```
+
+```python By UUID (Retenciones)
+import base64
+from satcfdi.pacs.sat import SAT, EstadoSolicitud
+
+# Request by specific folio fiscal
+response = sat.recover_retencion_uuid_request(
+    folio="31764278-d091-417f-83aa-063239e7773b"
+)
+id_solicitud = response["IdSolicitud"]
+
+# Verify
+response = sat.recover_retencion_status(id_solicitud)
+
+# Download
+if response["EstadoSolicitud"] == EstadoSolicitud.TERMINADA:
+    for id_paquete in response["IdsPaquetes"]:
+        header, paquete_b64 = sat.recover_retencion_download(id_paquete)
+        with open(f"{id_paquete}.zip", "wb") as f:
+            f.write(base64.b64decode(paquete_b64))
+```
+</CodeGroup>
+
+---
+
+## Method Reference
+
+<Accordion title="recover_comprobante_emitted_request()">
+Request a download of **emitted** (issued) CFDI.
+
+```python
+sat.recover_comprobante_emitted_request(
+    fecha_inicial: date | datetime | None = None,
+    fecha_final: date | datetime | None = None,
+    rfc_receptor: str | Sequence[str] | None = None,  # up to 5 RFC values
+    rfc_emisor: str | None = None,                    # defaults to signer.rfc
+    tipo_solicitud: TipoDescargaMasivaTerceros = TipoDescargaMasivaTerceros.CFDI,
+    tipo_comprobante: TipoDeComprobante | str | None = None,
+    estado_comprobante: EstadoComprobante | str | None = None,
+    rfc_a_cuenta_terceros: str | None = None,
+    complemento: str | None = None,
+) -> dict
+```
+
+Returns `{"IdSolicitud": "...", "CodEstatus": "5000", ...}`.
+</Accordion>
+
+<Accordion title="recover_comprobante_received_request()">
+Request a download of **received** CFDI.
+
+```python
+sat.recover_comprobante_received_request(
+    fecha_inicial: date | datetime | None = None,
+    fecha_final: date | datetime | None = None,
+    rfc_receptor: str | None = None,      # defaults to signer.rfc
+    rfc_emisor: str | None = None,
+    tipo_solicitud: TipoDescargaMasivaTerceros = TipoDescargaMasivaTerceros.CFDI,
+    tipo_comprobante: TipoDeComprobante | str | None = None,
+    estado_comprobante: EstadoComprobante | str | None = None,
+    rfc_a_cuenta_terceros: str | None = None,
+    complemento: str | None = None,
+) -> dict
+```
+</Accordion>
+
+<Accordion title="recover_comprobante_uuid_request()">
+Request a download for a **single CFDI by UUID** (folio fiscal).
+
+```python
+sat.recover_comprobante_uuid_request(
+    folio: str | UUID | None = None,
+) -> dict
+```
+</Accordion>
+
+<Accordion title="recover_comprobante_status()">
+Check the processing status of a previously submitted request.
+
+```python
+sat.recover_comprobante_status(id_solicitud: str) -> dict
+```
+
+Returns a dict with keys: `EstadoSolicitud` (int), `NumeroCFDIs` (int), `IdsPaquetes` (list of str), `CodigoEstadoSolicitud` (str), `CodEstatus` (str), `Mensaje` (str).
+</Accordion>
+
+<Accordion title="recover_comprobante_download()">
+Download a single package ZIP by its package ID.
+
+```python
+sat.recover_comprobante_download(id_paquete: str) -> tuple[dict, str]
+```
+
+Returns a `(header_dict, base64_encoded_zip_string)` tuple. Decode with `base64.b64decode()` before writing to disk.
+</Accordion>

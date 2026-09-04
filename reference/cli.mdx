@@ -1,0 +1,197 @@
+---
+title: "satcfdi CLI: Convert CFDI XML to PDF, HTML, and JSON"
+sidebarTitle: "CLI"
+description: "Command-line reference for the satcfdi CLI tool — convert CFDI XML files to PDF, HTML, or JSON representations from the terminal using glob patterns."
+---
+
+The `satcfdi` command-line interface lets you convert one or more CFDI XML files into PDF, HTML, or JSON directly from your terminal, without writing any Python code. It uses the same `satcfdi.render` module as the Python API, so the output is identical to what you would get by calling `render.pdf_write()` programmatically. The CLI is particularly useful in scripts, CI pipelines, and server-side batch jobs where you need to process many CFDI files at once.
+
+## Installation
+
+The CLI entry point is installed automatically when you install the library. No extra steps are required.
+
+```bash
+pip install satcfdi
+```
+
+After installation, verify the CLI is available:
+
+```bash
+satcfdi help
+```
+
+Expected output:
+
+```
+Looks like you need some help
+Commands:
+ pdf       creates a pdf file
+ html      creates a html file
+ json      creates a json file
+```
+
+<Note>
+  PDF generation requires WeasyPrint and its native system dependencies
+  (Cairo, Pango). See the [Render reference](/reference/render) for
+  installation instructions. HTML and JSON conversion work without
+  WeasyPrint.
+</Note>
+
+---
+
+## Commands
+
+### `satcfdi pdf <file>`
+
+Converts a CFDI XML file to a PDF document. The output file is written to the same directory as the input, with the `.xml` extension replaced by `.pdf`.
+
+```bash
+satcfdi pdf factura.xml
+# Output: factura.pdf
+```
+
+<ParamField path="file" type="string" required>
+  Path to the CFDI XML file. Accepts a literal file path or a glob pattern
+  (e.g. `*.xml`, `invoices/**/*.xml`).
+</ParamField>
+
+---
+
+### `satcfdi html <file>`
+
+Converts a CFDI XML file to a self-contained HTML page. The output file uses the same base name with a `.html` extension.
+
+```bash
+satcfdi html factura.xml
+# Output: factura.html
+```
+
+<ParamField path="file" type="string" required>
+  Path or glob pattern pointing to one or more CFDI XML files.
+</ParamField>
+
+---
+
+### `satcfdi json <file>`
+
+Converts a CFDI XML file to a formatted (pretty-printed) JSON file. The output uses the same base name with a `.json` extension.
+
+```bash
+satcfdi json factura.xml
+# Output: factura.json
+```
+
+<ParamField path="file" type="string" required>
+  Path or glob pattern pointing to one or more CFDI XML files.
+</ParamField>
+
+<Note>
+  JSON output from the CLI is always pretty-printed (2-space indent) for
+  readability. If you need compact JSON, use `render.json_str()` from the
+  Python API with `pretty_print=False`.
+</Note>
+
+---
+
+### `satcfdi help`
+
+Prints a summary of available commands to standard output.
+
+```bash
+satcfdi help
+```
+
+---
+
+## Output file naming
+
+The output file is placed in the same directory as the input file. The naming rule is straightforward:
+
+- If the input file ends in `.xml`, the extension is replaced: `factura.xml` → `factura.pdf`
+- If the input file does not end in `.xml`, the new extension is appended: `factura` → `factura.pdf`
+
+| Input file | Command | Output file |
+|---|---|---|
+| `factura.xml` | `satcfdi pdf factura.xml` | `factura.pdf` |
+| `factura.xml` | `satcfdi html factura.xml` | `factura.html` |
+| `factura.xml` | `satcfdi json factura.xml` | `factura.json` |
+
+---
+
+## Glob patterns
+
+The `<file>` argument is expanded using Python's `glob.iglob`, so you can process entire directories in a single command. This is particularly useful for bulk conversion of monthly CFDI archives.
+
+```bash
+# Convert all XML files in the current directory to PDF
+satcfdi pdf "*.xml"
+
+# Convert all XML files in a subdirectory
+satcfdi html "facturas/*.xml"
+
+# Recursive glob (Python 3.5+)
+satcfdi json "**/*.xml"
+```
+
+<Warning>
+  On Unix shells, unquoted glob patterns like `*.xml` are expanded by the
+  shell before being passed to the CLI, which may behave differently from
+  Python's `glob.iglob`. Wrap the pattern in quotes to let the satcfdi CLI
+  handle the expansion itself.
+</Warning>
+
+---
+
+## Example terminal session
+
+The following session demonstrates downloading CFDI files and converting them in bulk:
+
+```bash
+# List available XML files
+ls facturas/
+# enero.xml  febrero.xml  marzo.xml
+
+# Convert all to PDF
+satcfdi pdf "facturas/*.xml"
+# INFO:satcfdi.cli.main:PDF created: 'facturas/enero.xml'
+# INFO:satcfdi.cli.main:PDF created: 'facturas/febrero.xml'
+# INFO:satcfdi.cli.main:PDF created: 'facturas/marzo.xml'
+
+# Verify output
+ls facturas/
+# enero.html  enero.json  enero.pdf  enero.xml
+# febrero.html  febrero.json  febrero.pdf  febrero.xml
+# marzo.html  marzo.json  marzo.pdf  marzo.xml
+```
+
+---
+
+## Error handling
+
+<Steps>
+  <Step title="Missing file argument">
+    If you omit the file argument, the CLI writes an error message to `stderr`
+    and exits with code 1:
+
+    ```bash
+    satcfdi pdf
+    # File argument is missing, example: cfdi pdf myfile.xml
+    ```
+  </Step>
+  <Step title="Invalid command">
+    Any unrecognised command raises a `CFDIError`:
+
+    ```bash
+    satcfdi docx factura.xml
+    # CFDIError: Invalid Command
+    ```
+  </Step>
+  <Step title="WeasyPrint not installed">
+    Running `satcfdi pdf` without WeasyPrint raises `ImportError`. Install
+    WeasyPrint and its system dependencies before using PDF conversion.
+
+    ```bash
+    pip install weasyprint
+    ```
+  </Step>
+</Steps>

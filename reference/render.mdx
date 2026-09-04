@@ -1,0 +1,302 @@
+---
+title: "Render CFDI to PDF, HTML, and JSON"
+sidebarTitle: "Render"
+description: "Reference for the satcfdi.render module — convert CFDI and Retenciones documents to PDF, HTML body or full page, and JSON using WeasyPrint and Jinja2 templates."
+---
+
+The `satcfdi.render` module converts any parsed `XElement` CFDI document — or a list of them — into a human-readable representation. Three output formats are supported: **PDF** (via WeasyPrint), **HTML** (via Jinja2 templates), and **JSON** (via the standard library `json` module). Every function accepts either a file path string or a writable file-like object as its `target`, making it straightforward to save to disk or stream directly to an HTTP response.
+
+## Installation note
+
+PDF rendering requires [WeasyPrint](https://weasyprint.org/) and its native system dependencies.
+
+<CodeGroup>
+
+```bash pip
+pip install satcfdi[pdf]
+```
+
+```bash Linux (Debian/Ubuntu)
+sudo apt-get install libcairo2 libpango-1.0-0 libpangocairo-1.0-0
+pip install weasyprint
+```
+
+```bash macOS (Homebrew)
+brew install cairo pango
+pip install weasyprint
+```
+
+</CodeGroup>
+
+<Warning>
+  If WeasyPrint is not installed or its native libraries are missing, calling
+  `pdf_write()` or `pdf_bytes()` will raise `ImportError: weasyprint is not
+  installed`. HTML and JSON rendering work without WeasyPrint.
+</Warning>
+
+---
+
+## Templates
+
+Two Jinja2 templates are exported directly from `satcfdi.render`:
+
+<ResponseField name="MAIN_TEMPLATE" type="jinja2.Template">
+  A fully self-contained HTML page (`_main.html`) with embedded CSS and QR
+  code generation. Use this when saving a standalone `.html` file or
+  generating a PDF. This is the default template for all render functions.
+</ResponseField>
+
+<ResponseField name="BODY_TEMPLATE" type="jinja2.Template">
+  A partial HTML template (`_body.html`) that renders only the CFDI body
+  fragment — no `<html>` or `<head>` wrapper. Use this when embedding a CFDI
+  preview into an existing webpage.
+</ResponseField>
+
+```python
+from satcfdi.render import MAIN_TEMPLATE, BODY_TEMPLATE
+
+# Embed into an existing page
+fragment = html_str(cfdi, template=BODY_TEMPLATE)
+```
+
+<Tip>
+  `BODY_TEMPLATE` is ideal for portals and SaaS applications that display
+  CFDI previews inline — the rendered fragment can be dropped directly into a
+  `<div>` without conflicting with your page's own styles.
+</Tip>
+
+---
+
+## PDF functions
+
+### `pdf_write()`
+
+Render a CFDI document (or list of documents) to a PDF file or writable stream.
+
+```python
+def pdf_write(
+    xlm: XElement | Sequence[XElement],
+    target,
+    template=MAIN_TEMPLATE,
+) -> None: ...
+```
+
+<ParamField path="xlm" type="XElement | Sequence[XElement]" required>
+  A single parsed CFDI `XElement` or a list of them. Passing a list renders
+  all documents into a single PDF in the order given.
+</ParamField>
+
+<ParamField path="target" type="str | BinaryIO" required>
+  Destination for the PDF output. Accepts a file path string or any binary
+  writable file-like object (e.g. `io.BytesIO`, `open(..., "wb")`).
+</ParamField>
+
+<ParamField path="template" type="jinja2.Template" default="MAIN_TEMPLATE">
+  Jinja2 template to use for rendering the intermediate HTML before PDF
+  conversion. Defaults to `MAIN_TEMPLATE`.
+</ParamField>
+
+```python
+from satcfdi.cfdi import CFDI
+from satcfdi import render
+
+cfdi = CFDI.from_file("factura.xml")
+render.pdf_write(cfdi, target="factura.pdf")
+```
+
+---
+
+### `pdf_bytes()`
+
+Render a CFDI document to PDF and return the raw bytes. Useful when you need to serve the PDF over HTTP or store it in memory.
+
+```python
+def pdf_bytes(
+    xlm: XElement | Sequence[XElement],
+    template=MAIN_TEMPLATE,
+) -> bytes: ...
+```
+
+<ParamField path="xlm" type="XElement | Sequence[XElement]" required>
+  A single CFDI `XElement` or a list of them.
+</ParamField>
+
+<ParamField path="template" type="jinja2.Template" default="MAIN_TEMPLATE">
+  Jinja2 template used for the intermediate HTML render.
+</ParamField>
+
+```python
+from satcfdi.cfdi import CFDI
+from satcfdi import render
+
+cfdi   = CFDI.from_file("factura.xml")
+pdf    = render.pdf_bytes(cfdi)
+
+# Stream as an HTTP response (Django example)
+response = HttpResponse(pdf, content_type="application/pdf")
+response["Content-Disposition"] = 'inline; filename="factura.pdf"'
+```
+
+---
+
+## HTML functions
+
+### `html_write()`
+
+Render a CFDI document (or list of documents) to an HTML file or writable text stream.
+
+```python
+def html_write(
+    xlm: XElement | Sequence[XElement],
+    target,
+    template=MAIN_TEMPLATE,
+) -> None: ...
+```
+
+<ParamField path="xlm" type="XElement | Sequence[XElement]" required>
+  A single CFDI `XElement` or a list of them. When a list is provided, all
+  documents are rendered together in a single HTML file using the
+  `_multiple` layout.
+</ParamField>
+
+<ParamField path="target" type="str | TextIO" required>
+  File path string or any writable text file-like object.
+</ParamField>
+
+<ParamField path="template" type="jinja2.Template" default="MAIN_TEMPLATE">
+  Jinja2 template. Use `BODY_TEMPLATE` to emit a fragment without a full HTML
+  page structure.
+</ParamField>
+
+```python
+from satcfdi.cfdi import CFDI
+from satcfdi import render
+
+cfdi = CFDI.from_file("factura.xml")
+render.html_write(cfdi, target="factura.html")
+```
+
+---
+
+### `html_str()`
+
+Render a CFDI document to an HTML string.
+
+```python
+def html_str(
+    xlm: XElement | Sequence[XElement],
+    template=MAIN_TEMPLATE,
+) -> str: ...
+```
+
+<ParamField path="xlm" type="XElement | Sequence[XElement]" required>
+  A single CFDI `XElement` or a list of them.
+</ParamField>
+
+<ParamField path="template" type="jinja2.Template" default="MAIN_TEMPLATE">
+  Jinja2 template. Swap for `BODY_TEMPLATE` to get an embeddable HTML
+  fragment.
+</ParamField>
+
+```python
+from satcfdi.cfdi import CFDI
+from satcfdi import render, BODY_TEMPLATE
+
+cfdi    = CFDI.from_file("factura.xml")
+snippet = render.html_str(cfdi, template=BODY_TEMPLATE)
+print(snippet[:200])
+```
+
+---
+
+## JSON functions
+
+### `json_write()`
+
+Serialise a CFDI `XElement` as JSON and write it to a file or stream. All non-serialisable Python types (e.g. `Decimal`, `date`) are converted via `str()`.
+
+```python
+def json_write(
+    xlm: XElement,
+    target,
+    pretty_print: bool = False,
+) -> None: ...
+```
+
+<ParamField path="xlm" type="XElement" required>
+  The CFDI `XElement` to serialise.
+</ParamField>
+
+<ParamField path="target" type="str | TextIO" required>
+  File path string or writable text file-like object.
+</ParamField>
+
+<ParamField path="pretty_print" type="bool" default="False">
+  When `True`, outputs indented JSON (2-space indent) for human readability.
+  When `False` (default), outputs compact single-line JSON.
+</ParamField>
+
+```python
+from satcfdi.cfdi import CFDI
+from satcfdi import render
+
+cfdi = CFDI.from_file("factura.xml")
+render.json_write(cfdi, target="factura.json", pretty_print=True)
+```
+
+---
+
+### `json_str()`
+
+Serialise a CFDI `XElement` as a JSON string.
+
+```python
+def json_str(
+    xlm: XElement,
+    pretty_print: bool = False,
+) -> str: ...
+```
+
+<ParamField path="xlm" type="XElement" required>
+  The CFDI `XElement` to serialise.
+</ParamField>
+
+<ParamField path="pretty_print" type="bool" default="False">
+  Enable indented output.
+</ParamField>
+
+```python
+from satcfdi.cfdi import CFDI
+from satcfdi import render
+
+cfdi = CFDI.from_file("factura.xml")
+data = render.json_str(cfdi, pretty_print=True)
+print(data)
+```
+
+---
+
+## Rendering multiple documents at once
+
+Every render function accepts a `Sequence[XElement]` in addition to a single `XElement`. When a list is provided, all documents are merged into a single output file. This is useful for monthly statements or batch receipts.
+
+```python
+from satcfdi.cfdi import CFDI
+from satcfdi import render
+import glob
+
+# Load all XML files in a directory
+cfdis = [CFDI.from_file(f) for f in glob.glob("facturas/*.xml")]
+
+# Render all into one PDF
+render.pdf_write(cfdis, target="all_facturas.pdf")
+
+# Or all into one HTML page
+render.html_write(cfdis, target="all_facturas.html")
+```
+
+<Note>
+  JSON rendering (`json_write`, `json_str`) currently accepts a single
+  `XElement`. To export multiple documents as JSON, iterate and call
+  `json_write` individually or build a list with `json_str`.
+</Note>

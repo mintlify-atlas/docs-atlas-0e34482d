@@ -1,0 +1,163 @@
+---
+title: "Generate PLD Reports for Anti-Money Laundering"
+sidebarTitle: "PLD"
+description: "Create PLD (Prevención de Lavado de Dinero) aviso reports for SAT using the create.pld submodules, including ARI, AVI, FEP, and other notice types."
+---
+
+**PLD** (Prevención de Lavado de Dinero) refers to Mexico's anti-money laundering reporting obligations under the Ley Federal para la Prevención e Identificación de Operaciones con Recursos de Procedencia Ilícita (LFPIORPI). Entities classified as *sujetos obligados* — including real-estate professionals, jewellers, accountants, notaries, and others — must file *avisos* with SAT's UIF (Unidad de Inteligencia Financiera) whenever they carry out covered activities above defined thresholds. `python-satcfdi` provides individual submodules for each aviso type, each generating the exact XML structure defined by SAT/UIF.
+
+## Available Aviso Modules
+
+Each aviso type has its own submodule under `satcfdi.create.pld`. Import the relevant module for the activity you need to report:
+
+| Module | Activity |
+|--------|----------|
+| `ari` | Arrendamiento de Inmuebles |
+| `avi` | Avisos Voluntarios |
+| `bli` | Blindaje de Vehículos |
+| `chv` | Compraventa de Cheques, Órdenes de Pago u otros Documentos |
+| `din` | Derechos e Instrumentos Notariales |
+| `don` | Donaciones |
+| `fep` | Fedatarios Públicos |
+| `fes` | Fe de erratas/Sustitución |
+| `inm` | Compraventa de Inmuebles |
+| `jys` | Juegos y Sorteos |
+| `mjr` | Mutuo, Préstamo o Crédito |
+| `mpc` | Máquinas de Procesamiento de Centavos |
+| `oba` | Obras de Arte y Antigüedades |
+| `spr` | Servicios Profesionales |
+| `tcv` | Tarjetas de Crédito y Vales |
+| `tdr` | Transferencias o Envíos de Dinero o Divisas |
+| `tpp` | Tarjetas de Prepago y Monederos Electrónicos |
+| `tsc` | Transmisión de Listas de Clientes |
+| `veh` | Compraventa de Vehículos |
+
+<Note>
+  Each module exposes its own set of typed classes that map directly to the SAT/UIF XML schema for that aviso. Always import from the specific module (e.g. `from satcfdi.create.pld import ari`).
+</Note>
+
+## Aviso ARI — Arrendamiento de Inmuebles
+
+The following complete example creates an ARI aviso (real-estate rental activity) and writes it to an XML file. It demonstrates the full nested structure: `Archivo → InformeType → AvisoType → PersonaAvisoType / DetalleOperacionesType`.
+
+```python
+from datetime import date
+from satcfdi.create.pld import ari
+
+aviso_ari = ari.Archivo(
+    informe=ari.InformeType(
+        mes_reportado='201407',
+        sujeto_obligado=ari.SujetoObligadoType(
+            clave_sujeto_obligado='OGA751212G56',
+            clave_actividad='ARI'
+        ),
+        aviso=ari.AvisoType(
+            referencia_aviso='REF15454FG454',
+            prioridad='1',
+            alerta=ari.AlertaType(
+                tipo_alerta='100'
+            ),
+            persona_aviso=ari.PersonaAvisoType(
+                tipo_persona=ari.TipoPersonaType(
+                    persona_fisica=ari.PersonaFisicaType(
+                        nombre='NEPOMUCENO',
+                        apellido_paterno='ALMONTE',
+                        apellido_materno='JUAREZ',
+                        fecha_nacimiento=date(1956, 8, 16),
+                        pais_nacionalidad='TG',
+                        actividad_economica='3130100'
+                    )
+                ),
+                tipo_domicilio=ari.TipoDomicilioType(
+                    extranjero=ari.ExtranjeroType(
+                        pais='TG',
+                        estado_provincia='TOGUILLITA',
+                        ciudad_poblacion='TOGUIS',
+                        colonia='NA',
+                        calle='TOGA TOGA',
+                        numero_exterior='45',
+                        codigo_postal='12448'
+                    )
+                ),
+            ),
+            detalle_operaciones=ari.DetalleOperacionesType(
+                datos_operacion=ari.DatosOperacionType(
+                    fecha_operacion=date(2014, 7, 1),
+                    tipo_operacion='1501',
+                    caracteristicas=ari.CaracteristicasType(
+                        fecha_inicio=date(2014, 1, 1),
+                        fecha_termino=date(2015, 1, 1),
+                        tipo_inmueble='3',
+                        valor_referencia='356825.12',
+                        colonia='6920',
+                        calle='SAN SIMON TOLNAHUAC',
+                        numero_exterior='VIOLANTE',
+                        numero_interior='45',
+                        codigo_postal='01058',
+                        folio_real='BG544-FRR-456B-FRR'
+                    ),
+                    datos_liquidacion=ari.DatosLiquidacionType(
+                        fecha_pago=date(2014, 7, 1),
+                        forma_pago='4',
+                        instrumento_monetario='4',
+                        moneda='2',
+                        monto_operacion='757897.55'
+                    )
+                )
+            )
+        )
+    )
+).process()
+
+aviso_ari.xml_write("aviso_ari.xml")
+```
+
+<Tip>
+  Call `.process()` on the `Archivo` object before calling `.xml_write()`. The `process()` method finalises the CFDI-like structure and applies any required transformations before serialisation.
+</Tip>
+
+## Signing and Exporting
+
+Once you have called `.process()`, export the aviso to XML using `xml_write()`:
+
+```python
+# Write to a named file
+aviso_ari.xml_write("aviso_ari.xml")
+```
+
+<CodeGroup>
+
+```python Export to XML file
+aviso_ari.xml_write("aviso_ari.xml")
+```
+
+```python Get XML as bytes
+xml_bytes = aviso_ari.xml_bytes()
+```
+
+```python Get XML as string
+xml_string = str(aviso_ari)
+```
+
+</CodeGroup>
+
+<Note>
+  Each aviso type module (`ari`, `fep`, `inm`, etc.) follows the same pattern: instantiate the root `Archivo` class with nested typed objects, call `.process()`, then call `.xml_write()`. The typed classes mirror the SAT/UIF-published XSD schema for each activity, so refer to the UIF schema documentation for valid field values (e.g. `tipo_alerta`, `tipo_operacion`, `forma_pago`).
+</Note>
+
+## Structure Overview
+
+<CardGroup cols={2}>
+  <Card title="Archivo" icon="folder">
+    Root element of every PLD aviso. Wraps the `InformeType`.
+  </Card>
+  <Card title="InformeType" icon="file-lines">
+    Contains `mes_reportado`, `SujetoObligadoType`, and one or more `AvisoType` entries.
+  </Card>
+  <Card title="AvisoType" icon="triangle-exclamation">
+    Core notice record: references, priority, alert code, involved persons, and operation detail.
+  </Card>
+  <Card title="DetalleOperacionesType" icon="receipt">
+    Operation-specific detail (dates, amounts, payment forms, property characteristics, etc.).
+  </Card>
+</CardGroup>

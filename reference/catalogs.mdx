@@ -1,0 +1,252 @@
+---
+title: "SAT Catalogs and Enums Reference"
+sidebarTitle: "Catalogs"
+description: "Reference for the satcfdi.create.cfd.catalogos module — SAT-defined enums for RegimenFiscal, UsoCFDI, MetodoPago, FormaPago, TipoDeComprobante, Impuesto, TipoFactor, and more."
+---
+
+The Mexican SAT publishes a set of official catalogs — fixed tables of codes and descriptions — that must be used when building CFDI comprobantes. The `satcfdi.create.cfd.catalogos` module exposes each catalog as a Python `StrEnum`, so every value is both a typed constant and a plain string. This means you can pass enum members directly to any CFDI builder function without explicit casting, while still benefiting from IDE autocomplete and static analysis.
+
+<Note>
+  All catalog values are sourced from the official SAT XSD schemas bundled
+  with the library. They reflect the CFDI 4.0 specification.
+</Note>
+
+<Tip>
+  Because every enum is a `StrEnum`, the member value equals the SAT code
+  string. You can compare members directly to raw strings if needed:
+  `MetodoPago.PAGO_EN_UNA_SOLA_EXHIBICION == "PUE"` evaluates to `True`.
+  Use your IDE's autocomplete to explore all available values — member names
+  match SAT's official catalog labels transliterated to Python-safe
+  identifiers.
+</Tip>
+
+---
+
+## Importing catalogs
+
+```python
+from satcfdi.create.cfd.catalogos import (
+    RegimenFiscal,
+    UsoCFDI,
+    MetodoPago,
+    FormaPago,
+    Impuesto,
+    TipoFactor,
+    TipoDeComprobante,
+)
+```
+
+---
+
+## `RegimenFiscal`
+
+Identifies the fiscal regime under which the issuer (`Emisor`) or receiver (`Receptor`) is registered with SAT.
+
+| Member | Code | Description |
+|---|---|---|
+| `GENERAL_DE_LEY_PERSONAS_MORALES` | `601` | General de Ley Personas Morales |
+| `PERSONAS_MORALES_CON_FINES_NO_LUCRATIVOS` | `603` | Personas Morales con Fines no Lucrativos |
+| `SUELDOS_Y_SALARIOS_E_INGRESOS_ASIMILADOS_A_SALARIOS` | `605` | Sueldos y Salarios e Ingresos Asimilados |
+| `ARRENDAMIENTO` | `606` | Arrendamiento |
+| `PERSONAS_FISICAS_CON_ACTIVIDADES_EMPRESARIALES_Y_PROFESIONALES` | `612` | Personas Físicas con Actividades Empresariales y Profesionales |
+| `SIN_OBLIGACIONES_FISCALES` | `616` | Sin Obligaciones Fiscales |
+| `INCORPORACION_FISCAL` | `621` | Incorporación Fiscal |
+| `ACTIVIDADES_AGRICOLAS_GANADERAS_SILVICOLAS_Y_PESQUERAS` | `622` | Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras |
+| `REGIMEN_SIMPLIFICADO_DE_CONFIANZA` | `626` | Régimen Simplificado de Confianza (RESICO) |
+
+```python
+from satcfdi.create.cfd.catalogos import RegimenFiscal
+
+regimen = RegimenFiscal.REGIMEN_SIMPLIFICADO_DE_CONFIANZA
+print(regimen)  # "626"
+```
+
+---
+
+## `UsoCFDI`
+
+Describes the fiscal purpose (`UsoCFDI`) declared by the receiver. Required on every `Receptor` node.
+
+| Member | Code | Description |
+|---|---|---|
+| `ADQUISICION_DE_MERCANCIAS` | `G01` | Adquisición de mercancias |
+| `GASTOS_EN_GENERAL` | `G03` | Gastos en general |
+| `POR_DEFINIR` | `P01` | Por definir |
+| `SIN_EFECTOS_FISCALES` | `S01` | Sin efectos fiscales |
+| `PAGOS` | `CP01` | Pagos |
+| `NOMINA` | `CN01` | Nómina |
+| `HONORARIOS_MEDICOS_DENTALES_Y_GASTOS_HOSPITALARIOS` | `D01` | Honorarios médicos, dentales y gastos hospitalarios |
+| `GASTOS_FUNERALES` | `D03` | Gastos funerales |
+| `DONATIVOS` | `D04` | Donativos |
+
+```python
+from satcfdi.create.cfd.catalogos import UsoCFDI
+
+uso = UsoCFDI.GASTOS_EN_GENERAL
+print(uso)  # "G03"
+```
+
+---
+
+## `MetodoPago`
+
+Indicates whether the invoice will be paid in a single payment or in instalments.
+
+| Member | Code | Description |
+|---|---|---|
+| `PAGO_EN_UNA_SOLA_EXHIBICION` | `PUE` | Pago en una sola exhibición |
+| `PAGO_EN_PARCIALIDADES_O_DIFERIDO` | `PPD` | Pago en parcialidades o diferido |
+
+```python
+from satcfdi.create.cfd.catalogos import MetodoPago
+
+metodo = MetodoPago.PAGO_EN_UNA_SOLA_EXHIBICION  # "PUE"
+```
+
+<Note>
+  When `MetodoPago` is `PPD`, a complemento de pago (`Pagos`) must be issued
+  later to settle the balance. When it is `PUE`, the invoice is considered
+  paid in full on the date of issue.
+</Note>
+
+---
+
+## `FormaPago`
+
+The payment method code required on `PUE` invoices (the physical means by which payment is made).
+
+| Member | Code | Description |
+|---|---|---|
+| `EFECTIVO` | `01` | Efectivo |
+| `CHEQUE_NOMINATIVO` | `02` | Cheque nominativo |
+| `TRANSFERENCIA_ELECTRONICA_DE_FONDOS` | `03` | Transferencia electrónica de fondos |
+| `TARJETA_DE_CREDITO` | `04` | Tarjeta de crédito |
+| `MONEDERO_ELECTRONICO` | `05` | Monedero electrónico |
+| `TARJETA_DE_DEBITO` | `28` | Tarjeta de débito |
+| `APLICACION_DE_ANTICIPOS` | `30` | Aplicación de anticipos |
+| `POR_DEFINIR` | `99` | Por definir |
+
+```python
+from satcfdi.create.cfd.catalogos import FormaPago
+
+forma = FormaPago.TRANSFERENCIA_ELECTRONICA_DE_FONDOS  # "03"
+```
+
+---
+
+## `TipoDeComprobante`
+
+Classifies the type of CFDI being issued.
+
+| Member | Code | Description |
+|---|---|---|
+| `INGRESO` | `I` | Ingreso — standard sales invoice |
+| `EGRESO` | `E` | Egreso — credit note or refund |
+| `TRASLADO` | `T` | Traslado — goods-in-transit document |
+| `NOMINA` | `N` | Nómina — payroll receipt |
+| `PAGO` | `P` | Pago — payment complement |
+
+```python
+from satcfdi.create.cfd.catalogos import TipoDeComprobante
+
+tipo = TipoDeComprobante.INGRESO  # "I"
+```
+
+---
+
+## `Impuesto`
+
+Identifies the tax type applied to a line item or totals section.
+
+| Member | Code | Description |
+|---|---|---|
+| `ISR` | `001` | Impuesto Sobre la Renta |
+| `IVA` | `002` | Impuesto al Valor Agregado |
+| `IEPS` | `003` | Impuesto Especial sobre Producción y Servicios |
+
+```python
+from satcfdi.create.cfd.catalogos import Impuesto
+
+impuesto = Impuesto.IVA  # "002"
+```
+
+---
+
+## `TipoFactor`
+
+Specifies how the tax rate or quota applies to the taxable base.
+
+| Member | Value | Description |
+|---|---|---|
+| `TASA` | `Tasa` | Percentage rate (e.g. 16 % IVA → `0.160000`) |
+| `CUOTA` | `Cuota` | Fixed amount per unit (IEPS quota) |
+| `EXENTO` | `Exento` | Exempt — no tax amount applicable |
+
+```python
+from satcfdi.create.cfd.catalogos import TipoFactor
+
+factor = TipoFactor.TASA  # "Tasa"
+```
+
+---
+
+## Additional catalogs
+
+The module also exports the following enums used in more specific scenarios:
+
+<Accordion title="TipoRelacion — CFDI relationship types">
+  Used in the `CfdiRelacionados` node to describe how this CFDI relates to previously issued documents.
+
+  | Member | Code |
+  |---|---|
+  | `NOTA_DE_CREDITO_DE_LOS_DOCUMENTOS_RELACIONADOS` | `01` |
+  | `NOTA_DE_DEBITO_DE_LOS_DOCUMENTOS_RELACIONADOS` | `02` |
+  | `DEVOLUCION_DE_MERCANCIA_SOBRE_FACTURAS_O_TRASLADOS_PREVIOS` | `03` |
+  | `SUSTITUCION_DE_LOS_CFDI_PREVIOS` | `04` |
+  | `CFDI_POR_APLICACION_DE_ANTICIPO` | `07` |
+</Accordion>
+
+<Accordion title="ObjetoImp — Tax object classification">
+  Indicates whether the concept is subject to tax and whether breakdown is required.
+
+  | Member | Code |
+  |---|---|
+  | `NO_OBJETO_DE_IMPUESTO` | `01` |
+  | `SI_OBJETO_DE_IMPUESTO` | `02` |
+  | `SI_OBJETO_DEL_IMPUESTO_Y_NO_OBLIGADO_AL_DESGLOSE` | `03` |
+</Accordion>
+
+<Accordion title="Exportacion — Export classification">
+  Required for all CFDI 4.0 comprobantes to declare whether goods are exported.
+
+  | Member | Code |
+  |---|---|
+  | `NO_APLICA` | `01` |
+  | `DEFINITIVA_CON_CLAVE_A1` | `02` |
+  | `TEMPORAL` | `03` |
+</Accordion>
+
+<Accordion title="Periodicidad — Global invoice periodicity">
+  Used in the `InformacionGlobal` node for public-facing invoices.
+
+  | Member | Code |
+  |---|---|
+  | `DIARIO` | `01` |
+  | `SEMANAL` | `02` |
+  | `QUINCENAL` | `03` |
+  | `MENSUAL` | `04` |
+  | `BIMESTRAL` | `05` |
+</Accordion>
+
+<Accordion title="Banco — Bank institution codes">
+  Three-digit CLABE bank codes. Commonly used members include:
+
+  | Member | Code |
+  |---|---|
+  | `BANAMEX` | `002` |
+  | `BBVA_BANCOMER` | `012` |
+  | `SANTANDER` | `014` |
+  | `BANORTE` | `072` |
+  | `HSBC` | `021` |
+  | `STP` | `646` |
+</Accordion>
